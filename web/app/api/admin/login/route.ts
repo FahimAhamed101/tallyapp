@@ -24,8 +24,22 @@ export const POST = handler(async (req: NextRequest) => {
     throw badRequest('ইনপুট সঠিক নয়', formatZodError(parsed.error));
   }
 
-  const cleanPhone = User.normalizePhone(parsed.data.phone);
-  const user = await User.findOne({ phone: cleanPhone });
+  const identifier = String(
+    parsed.data.phone || parsed.data.email || parsed.data.identifier || '',
+  ).trim();
+
+  let user = null;
+  if (identifier.includes('@')) {
+    user = await User.findOne({ email: identifier.toLowerCase() });
+  } else if (identifier.toLowerCase() === 'admin') {
+    user = await User.findOne({ role: 'admin' });
+  } else {
+    const cleanPhone = User.normalizePhone(identifier);
+    user = (await User.findOne({ phone: cleanPhone })) || (await User.findOne({ phone: identifier }));
+    if (!user) {
+      user = await User.findOne({ email: identifier.toLowerCase() });
+    }
+  }
 
   // Same message either way, so the endpoint cannot be used to enumerate accounts.
   if (!user || !User.verifyPassword(user, parsed.data.password)) {
@@ -43,6 +57,7 @@ export const POST = handler(async (req: NextRequest) => {
       id: String(user._id),
       name: user.name,
       phone: user.phone,
+      email: user.email || '',
       role: user.role,
     },
   });

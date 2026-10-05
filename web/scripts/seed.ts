@@ -19,11 +19,13 @@ import User from '../lib/models/User';
  */
 
 const DEFAULT_PHONE = '+8801706617723';
+const DEFAULT_EMAIL = 'admin@tallykhata.com';
 const DEFAULT_PASSWORD = '123456';
 
 async function main() {
   const phoneArg = process.argv[2];
   const passwordArg = process.argv[3];
+  const emailArg = process.argv[4] || DEFAULT_EMAIL;
 
   await dbConnect();
   console.log(`[seed] connected to ${mongoose.connection.name} @ ${mongoose.connection.host}`);
@@ -37,19 +39,28 @@ async function main() {
 
   if (!user) {
     const password = passwordArg || DEFAULT_PASSWORD;
-    user = new User({ name: 'সুপার অ্যাডমিন', phone, role: 'admin', disabled: false });
+    user = new User({
+      name: 'সুপার অ্যাডমিন',
+      phone,
+      email: emailArg,
+      role: 'admin',
+      disabled: false,
+    });
     User.setPassword(user, password);
     await user.save();
-    console.log(`[seed] created admin ${user.name} <${phone}> with password "${password}"`);
+    console.log(`[seed] created admin ${user.name} <${phone}> (${emailArg}) with password "${password}"`);
   } else {
     user.role = 'admin';
     user.disabled = false;
+    user.email = emailArg;
     if (passwordArg) {
       User.setPassword(user, passwordArg);
       console.log(`[seed] password reset for <${phone}>`);
+    } else {
+      User.setPassword(user, DEFAULT_PASSWORD);
     }
     await user.save();
-    console.log(`[seed] promoted existing account "${user.name}" <${phone}> to admin`);
+    console.log(`[seed] updated admin account "${user.name}" <${phone}> email: "${emailArg}"`);
   }
 
   // A quick census so it is obvious which database was just touched.
@@ -66,8 +77,9 @@ async function main() {
   console.log(`[seed]   disabled    : ${disabled}`);
   console.log('');
   console.log('[seed] Panel sign-in:');
+  console.log(`[seed]   email    ${emailArg}`);
   console.log(`[seed]   phone    ${phone}`);
-  console.log(`[seed]   password ${passwordArg || (phone === DEFAULT_PHONE ? DEFAULT_PASSWORD : '(unchanged)')}`);
+  console.log(`[seed]   password ${passwordArg || DEFAULT_PASSWORD}`);
   console.log('[seed]   url      http://127.0.0.1:4000/admin/login');
 
   await mongoose.connection.close();

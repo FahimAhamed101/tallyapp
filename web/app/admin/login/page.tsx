@@ -33,6 +33,13 @@ export default function AdminLoginPage() {
     }
   };
 
+  const fillDemo = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setPhone('admin@tallykhata.com');
+    setPassword('123456');
+    setError(null);
+  };
+
   return (
     <div className="login-wrap">
       <form className="login-card" onSubmit={submit}>
@@ -44,14 +51,42 @@ export default function AdminLoginPage() {
 
         {error && <div className="notice error">{error}</div>}
 
+        <div
+          style={{
+            background: 'rgba(217, 39, 44, 0.05)',
+            border: '1px solid rgba(217, 39, 44, 0.15)',
+            borderRadius: 8,
+            padding: '12px 14px',
+            marginBottom: 16,
+            fontSize: 13,
+            lineHeight: 1.5,
+          }}
+        >
+          <div style={{ fontWeight: 600, color: 'var(--red, #D9272C)', marginBottom: 4 }}>
+            ডিফল্ট অ্যাডমিন তথ্য:
+          </div>
+          <div style={{ color: '#444' }}>
+            <div><strong>ইমেইল:</strong> admin@tallykhata.com</div>
+            <div><strong>মোবাইল:</strong> 01706617723</div>
+            <div><strong>পাসওয়ার্ড:</strong> 123456</div>
+          </div>
+          <button
+            type="button"
+            onClick={fillDemo}
+            className="btn btn-secondary"
+            style={{ marginTop: 8, width: '100%', padding: '6px 10px', fontSize: 12 }}
+          >
+            অটো-ফিল করুন (Auto-Fill)
+          </button>
+        </div>
+
         <div className="field">
-          <label htmlFor="phone">মোবাইল নম্বর</label>
+          <label htmlFor="phone">মোবাইল নম্বর বা ইমেইল</label>
           <input
             id="phone"
-            type="tel"
-            inputMode="tel"
+            type="text"
             autoComplete="username"
-            placeholder="+8801706617723"
+            placeholder="admin@tallykhata.com অথবা 01706617723"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             required

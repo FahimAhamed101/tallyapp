@@ -33,6 +33,7 @@ const UserSchema = new Schema(
     phone: { type: String, required: true, unique: true, trim: true, index: true },
     passwordSalt: { type: String, required: true },
     passwordHash: { type: String, required: true },
+    email: { type: String, trim: true, lowercase: true, index: true, sparse: true, default: null },
     photoUrl: { type: String, default: '' },
     /**
      * Panel access level. Defaults to 'user' so every account created by the
@@ -60,6 +61,7 @@ export interface PublicUser {
   id: string;
   name: string;
   phone: string;
+  email?: string;
   photoUrl: string;
   role: UserRole;
   createdAt: Date;
@@ -162,6 +164,7 @@ function publicView(user: UserDoc): PublicUser {
     id: String(user._id),
     name: user.name,
     phone: user.phone,
+    email: user.email || '',
     photoUrl: user.photoUrl || '',
     role: (user.role as UserRole) || 'user',
     createdAt: user.createdAt,

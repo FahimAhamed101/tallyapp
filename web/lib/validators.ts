@@ -63,10 +63,17 @@ export const registerSchema = z.object({
     .min(6, 'পাসওয়ার্ড কমপক্ষে 6 অক্ষরের হতে হবে'),
 });
 
-export const loginSchema = z.object({
-  phone: phoneField,
-  password: z.string().optional(),
-});
+export const loginSchema = z
+  .object({
+    phone: z.string().optional(),
+    email: z.string().optional(),
+    identifier: z.string().optional(),
+    password: z.string().optional(),
+  })
+  .refine((data) => Boolean(data.phone?.trim() || data.email?.trim() || data.identifier?.trim()), {
+    message: 'মোবাইল নম্বর বা ইমেইল দিন',
+    path: ['phone'],
+  });
 
 export const changePasswordSchema = z.object({
   currentPassword: z.string().optional(),
