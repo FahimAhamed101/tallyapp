@@ -23,7 +23,7 @@ class UnauthorizedException(message: String) : Exception(message)
 object ApiClient {
 
     @Volatile
-    var baseUrl: String = "http://127.0.0.1:4000/api"
+    var baseUrl: String = "https://web-zeta-ten-xj1oia2att.vercel.app/api"
 
     /** Set by SessionStore on startup and on login; null when logged out. */
     @Volatile
