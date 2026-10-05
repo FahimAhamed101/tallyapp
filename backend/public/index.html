@@ -1,0 +1,697 @@
+<!doctype html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TallyKhata · লাইভ ডেটা প্রিভিউ</title>
+<style>
+  :root{
+    --gold-start:#CCAA67; --gold-end:#EBD6AD;
+    --page:#FFFFFF; --cream:#FAF5EB; --field:#F2F2F2; --divider:#E6E6E6;
+    --cta-red:#BA1414; --pabo:#E61919; --debo:#4CAF50;
+    --zero-green:#1C7D50; --avatar-bg:#D1FAD1;
+    --text:#1A1A1A; --body:#333333; --hint:#6B6B6B;
+    --cashbox-cream:#F5EBD6; --soft:#F5F5F5;
+    --row-green:#EDF7EE; --row-red:#F3D0D1;
+    --amount-green:#34C759; --amount-red:#B82329;
+    --menu-gold:#DBBC7D; --menu-yellow:#FCCD29; --section-red:#B81414;
+    --muted:#9E9E9E; --muted-icon:#C9C9C9;
+    --info-blue:#2685D9; --info-bg:#EDF5FC;
+    --border:#CCCCCC;
+    --font:"Noto Sans Bengali","Hind Siliguri","Nirmala UI","Segoe UI",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{font-family:var(--font);background:#EDEDED;color:var(--text);-webkit-font-smoothing:antialiased}
+
+  .shell{max-width:430px;margin:24px auto 64px;background:var(--page);
+         border-radius:26px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.18);position:relative}
+
+  /* ---------- header ---------- */
+  header{background:linear-gradient(135deg,var(--gold-start),var(--gold-end));padding:16px 18px 20px;position:relative}
+  .hrow{display:flex;align-items:center;gap:12px}
+  .hamb{width:24px;height:18px;display:flex;flex-direction:column;justify-content:space-between;flex:0 0 auto;cursor:pointer}
+  .hamb i{display:block;height:2.5px;background:#5a4a22;border-radius:2px}
+  .biz{flex:1;text-align:center}
+  .biz .name{font-size:17px;font-weight:700;color:#4a3a12;line-height:1.2}
+  .biz .plan{font-size:11px;color:#7a6533;margin-top:2px}
+  .bell{position:relative;flex:0 0 auto;cursor:pointer}
+  .bell svg{display:block}
+  .bell .badge{position:absolute;top:-4px;right:-6px;background:var(--pabo);color:#fff;font-size:10px;
+               min-width:16px;height:16px;border-radius:9px;display:flex;align-items:center;justify-content:center;
+               font-weight:700;padding:0 4px}
+
+  /* ---------- tabs ---------- */
+  nav{display:flex;background:#fff;border-bottom:1px solid var(--divider)}
+  nav button{flex:1;border:0;background:none;font-family:var(--font);font-size:13px;font-weight:600;
+             color:var(--hint);padding:13px 4px;cursor:pointer;border-bottom:2.5px solid transparent}
+  nav button.on{color:var(--cta-red);border-bottom-color:var(--cta-red)}
+
+  .pane{display:none;padding:0 0 22px}
+  .pane.on{display:block}
+
+  /* ---------- balance strip ---------- */
+  .bal{display:flex;background:var(--cream);border-bottom:1px solid var(--divider)}
+  .bal div{flex:1;text-align:center;padding:13px 6px}
+  .bal div + div{border-left:1px solid var(--divider)}
+  .bal .k{font-size:12px;color:var(--hint)}
+  .bal .v{font-size:19px;font-weight:800;margin-top:3px}
+  .bal .pabo .v{color:var(--pabo)}
+  .bal .debo .v{color:var(--debo)}
+
+  .listhead{display:flex;justify-content:space-between;align-items:center;padding:12px 18px 6px}
+  .listhead .l{font-size:13px;font-weight:700;color:var(--body)}
+  .listhead .r{font-size:12px;color:var(--hint)}
+
+  /* ---------- customer rows ---------- */
+  .row{display:flex;align-items:center;gap:12px;padding:11px 18px;border-bottom:1px solid var(--divider)}
+  .row:last-child{border-bottom:0}
+  .av{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+      font-size:15px;font-weight:700;flex:0 0 auto}
+  .row .mid{flex:1;min-width:0}
+  .row .nm{font-size:15px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .sub{font-size:11.5px;color:var(--hint);margin-top:2px}
+  .row .amt{text-align:right;flex:0 0 auto}
+  .row .amt .a{font-size:15px;font-weight:800}
+  .row .amt .t{font-size:10.5px;margin-top:2px}
+  .tone-pabo{color:var(--amount-red)} .tone-debo{color:var(--amount-green)} .tone-zero{color:var(--muted)}
+  .tag{display:inline-block;font-size:9.5px;padding:1px 6px;border-radius:8px;background:var(--soft);color:var(--hint);margin-left:6px}
+
+  /* ---------- cashbox ---------- */
+  .cbtop{background:var(--cashbox-cream);padding:16px 18px 18px}
+  .cbtop .lab{font-size:12.5px;color:var(--hint)}
+  .cbtop .big{font-size:30px;font-weight:800;color:var(--text);margin-top:2px;letter-spacing:-.5px}
+  .cbgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:14px 18px 4px}
+  .cbcell{background:var(--cream);border-radius:12px;padding:11px 12px}
+  .cbcell .k{font-size:11.5px;color:var(--hint)}
+  .cbcell .v{font-size:18px;font-weight:800;margin-top:3px}
+  .cbrows{padding:8px 0 0}
+  .cbrow{display:flex;align-items:center;gap:12px;padding:11px 18px;border-bottom:1px solid var(--divider)}
+  .cbrow:last-child{border-bottom:0}
+  .circ{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;flex:0 0 auto}
+  .circ.g{background:var(--row-green)} .circ.r{background:var(--row-red)}
+  .cbrow .nm{flex:1;font-size:14px;font-weight:600}
+  .cbrow .v{font-size:14.5px;font-weight:800}
+
+  /* ---------- wallet ---------- */
+  .hero{margin:16px 18px;background:linear-gradient(135deg,#E1251B,#c11b13);border-radius:14px;padding:16px;color:#fff}
+  .hero .k{font-size:12px;opacity:.85}
+  .hero .v{font-size:26px;font-weight:800;margin-top:2px}
+  .hero .s{font-size:11.5px;opacity:.9;margin-top:6px}
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px 8px;padding:8px 18px 0}
+  .svc{text-align:center;opacity:.38}
+  .svc.on{opacity:1}
+  .svc .ic{width:44px;height:44px;margin:0 auto;border-radius:12px;background:var(--field);
+           display:flex;align-items:center;justify-content:center;font-size:20px}
+  .svc.on .ic{background:#EAF7EC}
+  .svc .lb{font-size:10.5px;color:var(--body);margin-top:6px;line-height:1.25}
+  .cta{display:block;width:calc(100% - 36px);margin:18px auto 0;background:var(--cta-red);color:#fff;border:0;
+       border-radius:10px;padding:13px;font-family:var(--font);font-size:15px;font-weight:700;cursor:pointer}
+  .cta[disabled]{background:#F7DEDF;color:#B08A8A;cursor:not-allowed}
+
+  /* ---------- menu ---------- */
+  .mhead{background:linear-gradient(135deg,var(--gold-start),var(--gold-end));padding:18px}
+  .mhead .t{display:flex;align-items:center;gap:12px}
+  .mhead .av{background:var(--menu-yellow);color:#4a3a12;width:48px;height:48px;font-size:17px}
+  .mhead .nm{font-size:17px;font-weight:700;color:#3d2f0d}
+  .mhead .ph{font-size:12px;color:#6b5828;margin-top:2px}
+  .msec{padding:14px 18px 0}
+  .msec h4{margin:0 0 2px;font-size:13px;color:var(--section-red);font-weight:700}
+  .mitem{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--divider)}
+  .mitem:last-child{border-bottom:0}
+  .mitem .ic{width:30px;text-align:center;font-size:17px;color:var(--glyph,#2E9E2E)}
+  .mitem .lb{flex:1;font-size:14px;color:var(--text)}
+  .mitem .ct{font-size:12px;color:var(--hint);background:var(--soft);border-radius:9px;padding:2px 8px}
+  .mitem .ch{color:var(--muted-icon);font-size:16px}
+
+  /* ---------- write panel + log ---------- */
+  .panel{margin:18px 18px 0;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  .panel > .ph{background:var(--cream);padding:10px 14px;font-size:12.5px;font-weight:700;color:var(--body);
+               border-bottom:1px solid var(--divider);display:flex;justify-content:space-between;align-items:center;cursor:pointer}
+  .panel > .pb{padding:14px}
+  .panel > .pb.hide{display:none}
+  .f{display:flex;gap:8px;margin-bottom:8px}
+  .f input,.f select{flex:1;min-width:0;border:1px solid var(--border);border-radius:8px;padding:9px 11px;
+                     font-family:var(--font);font-size:13px;color:var(--text);background:#fff}
+  .f button{flex:0 0 auto;background:var(--cta-red);color:#fff;border:0;border-radius:8px;padding:9px 15px;
+            font-family:var(--font);font-size:13px;font-weight:700;cursor:pointer}
+  .f button[disabled]{background:#F7DEDF;color:#B08A8A;cursor:not-allowed}
+  .note{font-size:11.5px;color:var(--hint);margin:2px 0 10px}
+  .ok{color:var(--zero-green);font-weight:700}
+  .err{color:var(--cta-red);font-weight:700}
+
+  .log{margin:18px;border-top:1px solid var(--divider);padding-top:10px}
+  .log .lh{font-size:11.5px;font-weight:700;color:var(--hint);margin-bottom:6px;display:flex;justify-content:space-between}
+  .log pre{margin:0;max-height:190px;overflow:auto;background:#1b1b1b;color:#c9f7c9;border-radius:8px;
+           padding:10px;font:11px/1.55 ui-monospace,Consolas,monospace;white-space:pre-wrap;word-break:break-all}
+  .log pre .m{color:#8fd3ff} .log pre .s{color:#ffe08a} .log pre .e{color:#ff9d9d}
+
+  .banner{margin:12px 18px 0;background:#FDECEC;border:1px solid #F5C2C2;color:#8a1f1f;border-radius:10px;
+          padding:10px 12px;font-size:12.5px;display:none;align-items:center;justify-content:space-between;gap:10px}
+  .banner.on{display:flex}
+  .banner button{background:#8a1f1f;color:#fff;border:0;border-radius:7px;padding:6px 11px;
+                 font-family:var(--font);font-size:12px;font-weight:700;cursor:pointer}
+  .spin{padding:26px;text-align:center;color:var(--hint);font-size:13px}
+  .empty{padding:26px;text-align:center;color:var(--hint);font-size:13px}
+
+  /* ---------- login gate ---------- */
+  #gate{max-width:430px;margin:24px auto;background:#fff;border-radius:26px;overflow:hidden;
+        box-shadow:0 18px 50px rgba(0,0,0,.18)}
+  #gate .ghead{background:linear-gradient(135deg,var(--gold-start),var(--gold-end));padding:26px 20px 22px;text-align:center}
+  #gate .ghead .t{font-size:21px;font-weight:800;color:#4a3a12}
+  #gate .ghead .s{font-size:12.5px;color:#7a6533;margin-top:4px}
+  #gate .gbody{padding:20px}
+  #gate .f{display:flex;flex-direction:column;gap:9px;margin-bottom:11px}
+  #gate input{border:1px solid var(--border);border-radius:9px;padding:12px;font-family:var(--font);
+              font-size:14px;color:var(--text);width:100%}
+  #gate .go{width:100%;background:var(--cta-red);color:#fff;border:0;border-radius:9px;padding:13px;
+            font-family:var(--font);font-size:15px;font-weight:700;cursor:pointer;margin-top:4px}
+  #gate .go[disabled]{background:#F7DEDF;color:#B08A8A;cursor:not-allowed}
+  #gate .swap{text-align:center;font-size:12.5px;color:var(--hint);margin-top:14px}
+  #gate .swap b{color:var(--cta-red);cursor:pointer}
+  #gate .msg{font-size:12.5px;min-height:17px;margin-top:9px;text-align:center}
+  #gate .hint{background:var(--info-bg);border:1px solid #cfe6f8;border-radius:9px;padding:9px 11px;
+              font-size:11.5px;color:#1a5a8a;margin-top:14px;line-height:1.6}
+  #who{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 18px;
+       background:var(--cream);border-bottom:1px solid var(--divider);font-size:12px;color:var(--body)}
+  #who .out{background:none;border:1px solid var(--border);border-radius:7px;padding:4px 10px;
+            font-family:var(--font);font-size:11.5px;color:var(--hint);cursor:pointer}
+  body.locked .shell{display:none}
+  body:not(.locked) #gate{display:none}
+</style>
+</head>
+<body class="locked">
+
+<div id="gate">
+  <div class="ghead">
+    <div class="t">টালিখাতা</div>
+    <div class="s" id="gateSub">মোবাইল নম্বর দিয়ে লগইন করুন</div>
+  </div>
+  <div class="gbody">
+    <div class="f" id="rowName" style="display:none">
+      <input id="gName" placeholder="আপনার নাম" autocomplete="name">
+    </div>
+    <div class="f">
+      <input id="gPhone" placeholder="মোবাইল নম্বর" autocomplete="tel" value="01706617723">
+    </div>
+    <div class="f">
+      <input id="gPass" type="password" placeholder="পাসওয়ার্ড" autocomplete="current-password" value="123456">
+    </div>
+    <button class="go" id="gGo">লগইন করুন</button>
+    <div class="msg" id="gMsg"></div>
+    <div class="swap" id="gSwap">অ্যাকাউন্ট নেই? <b>রেজিস্টার করুন</b></div>
+    <div class="hint">
+      ডেমো অ্যাকাউন্ট:<br>
+      <b>01706617723</b> / 123456 &nbsp;·&nbsp; <b>01811223344</b> / 123456<br>
+      দুটি অ্যাকাউন্টের ডেটা সম্পূর্ণ আলাদা।
+    </div>
+  </div>
+</div>
+
+<div class="shell">
+
+  <div id="who">
+    <span>লগইন: <b id="whoName">…</b> <span id="whoPhone" style="color:var(--hint)"></span></span>
+    <button class="out" id="logout">লগআউট</button>
+  </div>
+
+  <header>
+    <div class="hrow">
+      <div class="hamb" id="hamb"><i></i><i></i><i></i></div>
+      <div class="biz">
+        <div class="name" id="bizName">…</div>
+        <div class="plan" id="bizPlan">…</div>
+      </div>
+      <div class="bell">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5a4a22" stroke-width="1.8"
+             stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/>
+        <path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+        <span class="badge" id="inboxBadge" style="display:none">0</span>
+      </div>
+    </div>
+  </header>
+
+  <nav>
+    <button data-p="home" class="on">হোম</button>
+    <button data-p="cash">ক্যাশবক্স</button>
+    <button data-p="wallet">ওয়ালেট</button>
+    <button data-p="menu">মেনু</button>
+  </nav>
+
+  <div class="banner" id="banner">
+    <span id="bannerMsg">সার্ভারে সংযোগ করা যায়নি</span>
+    <button id="retry">আবার চেষ্টা</button>
+  </div>
+
+  <!-- ============ HOME ============ -->
+  <section class="pane on" id="pane-home">
+    <div class="bal">
+      <div class="pabo"><div class="k">পাবো</div><div class="v" id="sumPabo">…</div></div>
+      <div class="debo"><div class="k">দেবো</div><div class="v" id="sumDebo">…</div></div>
+    </div>
+    <div class="listhead"><span class="l" id="listLabel">…</span><span class="r">বাকি হিসাব</span></div>
+    <div id="custList"><div class="spin">লোড হচ্ছে…</div></div>
+
+    <div class="panel">
+      <div class="ph" data-toggle="p1">নতুন কাস্টমার যোগ করুন <span>▾</span></div>
+      <div class="pb hide" id="pb-p1">
+        <div class="note">POST /api/customers — সরাসরি MongoDB-তে লেখা হয়</div>
+        <div class="f"><input id="cName" placeholder="নাম"></div>
+        <div class="f"><input id="cPhone" placeholder="মোবাইল নম্বর" value="+8801"></div>
+        <div class="f">
+          <select id="cType"><option value="customer">কাস্টমার</option><option value="supplier">সাপ্লায়ার</option></select>
+          <button id="cAdd" disabled>যোগ করুন</button>
+        </div>
+        <div id="cMsg" class="note"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="ph" data-toggle="p2">লেনদেন যোগ করুন <span>▾</span></div>
+      <div class="pb hide" id="pb-p2">
+        <div class="note">POST /api/customers/:id/transactions — ব্যালেন্স সবসময় aggregation থেকে হিসাব হয়</div>
+        <div class="f"><select id="tWho"></select></div>
+        <div class="f">
+          <select id="tBox"><option value="gave">দিলাম (বেচা)</option><option value="got">পেলাম</option></select>
+          <input id="tAmt" placeholder="টাকা" value="১,০০০.৫০">
+        </div>
+        <div class="f"><input id="tDesc" placeholder="বিবরণ"><button id="tAdd" disabled>যোগ করুন</button></div>
+        <div id="tMsg" class="note"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CASHBOX ============ -->
+  <section class="pane" id="pane-cash">
+    <div class="cbtop">
+      <div class="lab">বর্তমান ক্যাশ</div>
+      <div class="big" id="cbCash">…</div>
+    </div>
+    <div class="cbgrid">
+      <div class="cbcell"><div class="k">আজকের বেচা</div><div class="v" id="cbSale">…</div></div>
+      <div class="cbcell"><div class="k">আজ দিলাম</div><div class="v" id="cbOut">…</div></div>
+    </div>
+    <div class="cbrows" id="cbRows"><div class="spin">লোড হচ্ছে…</div></div>
+
+    <div class="panel">
+      <div class="ph" data-toggle="p3">ক্যাশ এন্ট্রি যোগ করুন <span>▾</span></div>
+      <div class="pb hide" id="pb-p3">
+        <div class="note">POST /api/cashbox/entries</div>
+        <div class="f">
+          <select id="kKind">
+            <option value="cash_sale">ক্যাশ বেচা</option>
+            <option value="cash_purchase">ক্যাশ কেনা</option>
+            <option value="expense">খরচ</option>
+            <option value="owner_in">মালিক দিল</option>
+            <option value="owner_out">মালিক নিল</option>
+          </select>
+          <input id="kAmt" placeholder="টাকা" value="৫০০">
+        </div>
+        <div class="f"><input id="kDesc" placeholder="বিবরণ"><button id="kAdd" disabled>যোগ করুন</button></div>
+        <div id="kMsg" class="note"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ WALLET ============ -->
+  <section class="pane" id="pane-wallet">
+    <div class="hero">
+      <div class="k">ব্যালেন্স</div>
+      <div class="v" id="wBal">…</div>
+      <div class="s" id="wSub">…</div>
+    </div>
+    <div class="grid" id="wGrid"></div>
+    <button class="cta" id="wOpen">অ্যাকাউন্ট খুলুন</button>
+    <div id="wMsg" class="note" style="text-align:center;margin-top:8px"></div>
+  </section>
+
+  <!-- ============ MENU ============ -->
+  <section class="pane" id="pane-menu">
+    <div class="mhead">
+      <div class="t">
+        <div class="av" id="mAv">…</div>
+        <div><div class="nm" id="mName">…</div><div class="ph" id="mPhone">…</div></div>
+      </div>
+    </div>
+    <div id="mSections"></div>
+    <div class="note" style="text-align:center;margin:18px 0 4px" id="mVer"></div>
+  </section>
+
+  <div class="log">
+    <div class="lh"><span>লাইভ রিকোয়েস্ট লগ</span><span id="logCount">0</span></div>
+    <pre id="log">ready.</pre>
+  </div>
+</div>
+
+<script>
+// Same-origin when served by the API itself (http://127.0.0.1:4000/);
+// falls back to the absolute API origin when opened from a file:// or a
+// different preview host. The server has CORS open, so both work.
+const API = location.origin === 'http://127.0.0.1:4000' ? '/api' : 'http://127.0.0.1:4000/api';
+const $  = (s) => document.querySelector(s);
+const logEl = $('#log');
+let logN = 0;
+
+/* ---------- auth ---------- */
+const TOKEN_KEY = 'tally.token';
+const USER_KEY  = 'tally.user';
+
+const getToken = () => localStorage.getItem(TOKEN_KEY) || '';
+const getUser  = () => {
+  try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null'); } catch { return null; }
+};
+
+function saveSession(token, user) {
+  localStorage.setItem(TOKEN_KEY, token);
+  localStorage.setItem(USER_KEY, JSON.stringify(user || null));
+}
+
+function clearSession() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+}
+
+function showGate() {
+  document.body.classList.add('locked');
+  $('#gMsg').textContent = '';
+}
+
+function showApp() {
+  document.body.classList.remove('locked');
+  const u = getUser();
+  if (u) {
+    $('#whoName').textContent = u.name || '—';
+    $('#whoPhone').textContent = u.phone || '';
+  }
+}
+
+function log(method, path, status, ms, note) {
+  logN++;
+  $('#logCount').textContent = logN;
+  const cls = status >= 400 ? 'e' : (status >= 200 && status < 300 ? 's' : 'm');
+  const line = `<span class="m">${method.padEnd(6)}</span> ${path}  ->  <span class="${cls}">${status}</span>  ${ms}ms${note ? '  ' + note : ''}`;
+  logEl.innerHTML = line + '\n' + logEl.innerHTML;
+}
+
+async function api(method, path, body) {
+  const t0 = performance.now();
+  const headers = {};
+  if (body) headers['Content-Type'] = 'application/json';
+  const token = getToken();
+  if (token) headers.Authorization = 'Bearer ' + token;
+
+  const res = await fetch(API + path, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const text = await res.text();
+  let json = null;
+  try { json = text ? JSON.parse(text) : null; } catch {}
+  log(method, path, res.status, Math.round(performance.now() - t0));
+
+  // An expired or revoked token drops the user back to the gate.
+  if (res.status === 401) {
+    clearSession();
+    showGate();
+  }
+
+  if (!res.ok) throw new Error((json && json.message) || `${res.status} ${text.slice(0, 90)}`);
+  return json;
+}
+
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+const toneClass = (t) => t === 'pabo' ? 'tone-pabo' : t === 'debo' ? 'tone-debo' : 'tone-zero';
+const toneText  = (t) => t === 'pabo' ? 'পাবো'   : t === 'debo' ? 'দেবো'    : 'পরিশোধিত';
+const iconOf = (k) => ({
+  // cashbox rows
+  cash_sale:'🛒', cash_purchase:'📦', expense:'🧾', owner_in:'⬇️', owner_out:'⬆️',
+  // wallet services
+  add_money:'➕', send_money:'➡️', bank_transfer:'🏦', wallet_transfer:'🔁',
+  mobile_recharge:'📱', tally_transfer:'🔗', qr_code:'🔳', bill_payment:'🧾',
+  // menu icons
+  note_edit:'📝', arrow_out:'↗️', inbox_doc:'📥', document:'📄', chart:'📊', gear:'⚙️',
+}[k] || '•');
+
+function banner(on, msg) {
+  $('#banner').classList.toggle('on', on);
+  if (msg) $('#bannerMsg').textContent = msg;
+}
+
+/* ---------------- renderers ---------------- */
+function renderProfile(p) {
+  if (!p) return;
+  $('#bizName').textContent = p.name || '—';
+  $('#bizPlan').textContent = p.goldPlanName || '';
+  const b = $('#inboxBadge');
+  if (p.inboxUnread > 0) { b.style.display = 'flex'; b.textContent = p.inboxUnread; }
+  else b.style.display = 'none';
+  $('#mAv').textContent = p.initials || '';
+  $('#mName').textContent = p.name || '';
+  $('#mPhone').textContent = p.phone || '';
+}
+
+function renderSummary(s) {
+  if (!s) return;
+  $('#sumPabo').textContent = s.receivable.display;
+  $('#sumDebo').textContent = s.payable.display;
+  $('#listLabel').textContent = s.customerLabel;
+}
+
+function renderCustomers(items) {
+  const box = $('#custList');
+  if (!items.length) { box.innerHTML = '<div class="empty">কোনো হিসাব নেই</div>'; return; }
+  box.innerHTML = items.map((c) => `
+    <div class="row">
+      <div class="av" style="background:${esc(c.avatarColor)};color:${esc(c.avatarTextColor)}">${esc(c.initials)}</div>
+      <div class="mid">
+        <div class="nm">${esc(c.name)}${c.type === 'supplier' ? '<span class="tag">সাপ্লায়ার</span>' : ''}</div>
+        <div class="sub">${esc(c.subtitle)}</div>
+      </div>
+      <div class="amt">
+        <div class="a ${toneClass(c.amountTone)}">৳ ${esc(c.amountDisplay)}</div>
+        <div class="t ${toneClass(c.amountTone)}">${toneText(c.amountTone)}</div>
+      </div>
+    </div>`).join('');
+
+  const sel = $('#tWho');
+  sel.innerHTML = items.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+}
+
+function renderCashbox(d) {
+  if (!d) return;
+  $('#cbCash').textContent = '৳ ' + d.currentCash.display;
+  $('#cbSale').textContent = '৳ ' + d.todaySale.display;
+  $('#cbOut').textContent = '৳ ' + (d.todayOut ? d.todayOut.display : '০.০০');
+  $('#cbRows').innerHTML = d.rows.map((r) => `
+    <div class="cbrow">
+      <div class="circ ${r.income ? 'g' : 'r'}">${iconOf(r.key)}</div>
+      <div class="nm">${esc(r.label)}</div>
+      <div class="v ${r.income ? 'tone-pabo' : 'tone-debo'}">৳ ${esc(r.amountDisplay)}</div>
+    </div>`).join('');
+}
+
+function renderWallet(w) {
+  if (!w) return;
+  $('#wBal').textContent = '৳ ' + (w.balance ? w.balance.display : '০.০০');
+  $('#wSub').textContent = w.accountOpened ? 'অ্যাকাউন্ট চালু আছে' : 'অ্যাকাউন্ট এখনো খোলা হয়নি';
+  $('#wGrid').innerHTML = w.services.map((s) => `
+    <div class="svc ${s.enabled ? 'on' : ''}">
+      <div class="ic">${iconOf(s.key)}</div><div class="lb">${esc(s.label)}</div>
+    </div>`).join('');
+  const btn = $('#wOpen');
+  btn.disabled = !!w.accountOpened;
+  btn.textContent = w.accountOpened ? '✓ অ্যাকাউন্ট খোলা হয়েছে' : 'অ্যাকাউন্ট খুলুন';
+}
+
+function renderMenu(m) {
+  if (!m) return;
+  $('#mVer').textContent = m.version || '';
+  $('#mSections').innerHTML = m.sections.map((sec) => `
+    <div class="msec"><h4>${esc(sec.title)}</h4>
+      ${sec.items.map((i) => `
+        <div class="mitem">
+          <div class="ic">${iconOf(i.icon || i.key)}</div>
+          <div class="lb">${esc(i.label)}</div>
+          ${i.count ? `<div class="ct">${esc(i.count)}</div>` : ''}
+          <div class="ch">›</div>
+        </div>`).join('')}
+    </div>`).join('');
+}
+
+/* ---------------- loaders ---------------- */
+async function loadAll() {
+  try {
+    const b = await api('GET', '/bootstrap');
+    renderProfile(b.profile); renderSummary(b.summary);
+    renderWallet(b.wallet); renderMenu(b.menu);
+    await loadCustomers();
+    await loadCashbox();
+    banner(false);
+  } catch (e) {
+    banner(true, e.message);
+    $('#custList').innerHTML = '<div class="empty">ডেটা লোড করা যায়নি</div>';
+  }
+}
+async function loadCustomers() {
+  const r = await api('GET', '/customers');
+  renderCustomers(r.items);
+  $('#tAdd').disabled = !canAddTxn();
+  $('#cAdd').disabled = !canAddCustomer();
+}
+async function loadCashbox() {
+  renderCashbox(await api('GET', '/cashbox'));
+  $('#kAdd').disabled = !canAddCash();
+}
+
+/* ---------------- write actions ---------------- */
+const canAddCustomer = () => !!($('#cName').value.trim() && $('#cPhone').value.trim());
+const canAddTxn      = () => !!($('#tWho').value && $('#tAmt').value.trim());
+const canAddCash     = () => !!$('#kAmt').value.trim();
+
+$('#cName').addEventListener('input', () => { $('#cAdd').disabled = !canAddCustomer(); });
+$('#cPhone').addEventListener('input', () => { $('#cAdd').disabled = !canAddCustomer(); });
+$('#tWho').addEventListener('change', () => { $('#tAdd').disabled = !canAddTxn(); });
+$('#tAmt').addEventListener('input', () => { $('#tAdd').disabled = !canAddTxn(); });
+$('#kAmt').addEventListener('input', () => { $('#kAdd').disabled = !canAddCash(); });
+
+$('#cAdd').addEventListener('click', async () => {
+  const msg = $('#cMsg'); msg.textContent = '…';
+  try {
+    const r = await api('POST', '/customers', {
+      name: $('#cName').value.trim(), phone: $('#cPhone').value.trim(), type: $('#cType').value,
+    });
+    msg.innerHTML = `<span class="ok">✓ ${esc(r.customer.name)} যোগ হয়েছে (initials ${esc(r.customer.initials)})</span>`;
+    $('#cName').value = '';
+    await loadCustomers(); renderSummary((await api('GET','/summary')));
+  } catch (e) { msg.innerHTML = `<span class="err">✗ ${esc(e.message)}</span>`; }
+});
+
+$('#tAdd').addEventListener('click', async () => {
+  const msg = $('#tMsg'); msg.textContent = '…';
+  try {
+    const r = await api('POST', `/customers/${$('#tWho').value}/transactions`, {
+      box: $('#tBox').value, amount: $('#tAmt').value.trim(), description: $('#tDesc').value.trim(),
+    });
+    msg.innerHTML = `<span class="ok">✓ ${esc(r.entry.title)} ${esc(r.entry.amountDisplay)} → ${esc(r.headline.label)} ${esc(r.headline.amountDisplay)}</span>`;
+    $('#tDesc').value = '';
+    await loadCustomers(); renderSummary(await api('GET','/summary'));
+  } catch (e) { msg.innerHTML = `<span class="err">✗ ${esc(e.message)}</span>`; }
+});
+
+$('#kAdd').addEventListener('click', async () => {
+  const msg = $('#kMsg'); msg.textContent = '…';
+  try {
+    const r = await api('POST', '/cashbox/entries', {
+      kind: $('#kKind').value, amount: $('#kAmt').value.trim(), description: $('#kDesc').value.trim(),
+    });
+    msg.innerHTML = `<span class="ok">✓ ${esc(r.entry.title)} ${esc(r.entry.amountDisplay)} → ক্যাশ ${esc(r.dashboard.currentCash.display)}</span>`;
+    $('#kDesc').value = '';
+    renderCashbox(r.dashboard);
+  } catch (e) { msg.innerHTML = `<span class="err">✗ ${esc(e.message)}</span>`; }
+});
+
+$('#wOpen').addEventListener('click', async () => {
+  const msg = $('#wMsg'); msg.textContent = '…';
+  try {
+    const r = await api('POST', '/wallet/open-account');
+    renderWallet(r.wallet);
+    msg.innerHTML = '<span class="ok">✓ অ্যাকাউন্ট খোলা হয়েছে</span>';
+  } catch (e) { msg.innerHTML = `<span class="err">✗ ${esc(e.message)}</span>`; }
+});
+
+/* ---------------- chrome ---------------- */
+document.querySelectorAll('nav button').forEach((b) => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('nav button').forEach((x) => x.classList.toggle('on', x === b));
+    document.querySelectorAll('.pane').forEach((p) => p.classList.toggle('on', p.id === 'pane-' + b.dataset.p));
+  });
+});
+document.querySelectorAll('[data-toggle]').forEach((h) => {
+  h.addEventListener('click', () => $('#' + 'pb-' + h.dataset.toggle).classList.toggle('hide'));
+});
+$('#retry').addEventListener('click', loadAll);
+$('#hamb').addEventListener('click', () => {
+  document.querySelector('nav button[data-p="menu"]').click();
+  window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+});
+
+logEl.textContent = '';
+
+/* ---------- login / register gate ---------- */
+let mode = 'login'; // 'login' | 'register'
+
+function setMode(next) {
+  mode = next;
+  const registering = mode === 'register';
+  $('#rowName').style.display = registering ? 'flex' : 'none';
+  $('#gateSub').textContent = registering ? 'নতুন অ্যাকাউন্ট খুলুন' : 'মোবাইল নম্বর দিয়ে লগইন করুন';
+  $('#gGo').textContent = registering ? 'রেজিস্টার করুন' : 'লগইন করুন';
+  $('#gSwap').innerHTML = registering
+    ? 'আগেই অ্যাকাউন্ট আছে? <b>লগইন করুন</b>'
+    : 'অ্যাকাউন্ট নেই? <b>রেজিস্টার করুন</b>';
+  $('#gPass').setAttribute('autocomplete', registering ? 'new-password' : 'current-password');
+  $('#gMsg').textContent = '';
+}
+
+$('#gSwap').addEventListener('click', () => setMode(mode === 'login' ? 'register' : 'login'));
+
+async function submitGate() {
+  const phone = $('#gPhone').value.trim();
+  const password = $('#gPass').value;
+  const name = $('#gName').value.trim();
+  const msg = $('#gMsg');
+
+  if (!phone) { msg.innerHTML = '<span class="err">মোবাইল নম্বর দিন</span>'; return; }
+  if (!password) { msg.innerHTML = '<span class="err">পাসওয়ার্ড দিন</span>'; return; }
+  if (mode === 'register' && !name) { msg.innerHTML = '<span class="err">নাম দিন</span>'; return; }
+
+  const btn = $('#gGo');
+  btn.disabled = true;
+  msg.textContent = mode === 'register' ? 'অ্যাকাউন্ট তৈরি হচ্ছে…' : 'লগইন হচ্ছে…';
+
+  try {
+    const path = mode === 'register' ? '/auth/register' : '/auth/login';
+    const body = mode === 'register' ? { name, phone, password } : { phone, password };
+    const out = await api('POST', path, body);
+    saveSession(out.token, out.user);
+    msg.innerHTML = '<span class="ok">সফল হয়েছে</span>';
+    showApp();
+    await loadAll();
+  } catch (e) {
+    msg.innerHTML = `<span class="err">${esc(e.message)}</span>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+$('#gGo').addEventListener('click', submitGate);
+['#gPhone', '#gPass', '#gName'].forEach((sel) =>
+  $(sel).addEventListener('keydown', (e) => { if (e.key === 'Enter') submitGate(); }),
+);
+
+$('#logout').addEventListener('click', async () => {
+  try { await api('POST', '/auth/logout'); } catch { /* token already dead */ }
+  clearSession();
+  showGate();
+  setMode('login');
+});
+
+/* ---------- boot ---------- */
+(async () => {
+  setMode('login');
+  if (!getToken()) { showGate(); return; }
+
+  // Validate the stored token before trusting it.
+  try {
+    await api('GET', '/auth/me');
+    showApp();
+    await loadAll();
+  } catch {
+    clearSession();
+    showGate();
+  }
+})();
+</script>
+</body>
+</html>

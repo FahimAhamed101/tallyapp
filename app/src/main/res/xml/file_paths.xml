@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Only the app's own cache is exposed, and only through the
+  com.workbuddy.tallyclone.fileprovider authority declared in the manifest.
+  The camera app gets a one-shot write grant for the single file we name in the
+  TakePicture intent; nothing else on disk is reachable.
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <cache-path
+        name="camera"
+        path="camera/" />
+    <cache-path
+        name="shared"
+        path="." />
+</paths>

@@ -1,0 +1,23 @@
+{
+  "name": "tallykhata-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Node/Express + MongoDB Atlas backend for the TallyKhata clone",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "seed": "node src/seed.js",
+    "seed:fresh": "node src/seed.js --fresh",
+    "smoke": "node smoke.js",
+    "verify": "node verify.js",
+    "ping": "node src/ping.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "mongoose": "^8.6.0"
+  }
+}

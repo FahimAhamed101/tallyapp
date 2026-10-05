@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- open ledger book -->
+    <path
+        android:pathData="M54,40 C48.6,36.2 41.4,34.4 34,35 L34,72 C41.4,71.4 48.6,73.2 54,77 C59.4,73.2 66.6,71.4 74,72 L74,35 C66.6,34.4 59.4,36.2 54,40 Z"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="3.4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M54,40 L54,77"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="3.4"
+        android:strokeLineCap="round" />
+</vector>
