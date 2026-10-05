@@ -37,6 +37,12 @@ sealed interface TallyScreen {
         val title: String,
         val amountLabel: String,
     ) : TallyScreen
+
+    /** সাইডবার মেনু রিপোর্ট স্ক্রিনসমূহ (বেচা কেনা, খরচ, বাকি, ক্যাশ হিসাব) */
+    data object SalesPurchaseReport : TallyScreen
+    data object ExpenseReport : TallyScreen
+    data object DueReport : TallyScreen
+    data class CashAccountReport(val initialTab: Int = 0) : TallyScreen
 }
 
 private val CASH_FORMS = mapOf(
@@ -171,6 +177,27 @@ fun AppRoot() {
                 title = current.title,
                 amountLabel = current.amountLabel,
             )
+
+            TallyScreen.SalesPurchaseReport -> SalesPurchaseReportScreen(
+                store = store,
+                onBack = { screen = TallyScreen.Home },
+            )
+
+            TallyScreen.ExpenseReport -> ExpenseReportScreen(
+                store = store,
+                onBack = { screen = TallyScreen.Home },
+            )
+
+            TallyScreen.DueReport -> DueReportScreen(
+                store = store,
+                onBack = { screen = TallyScreen.Home },
+            )
+
+            is TallyScreen.CashAccountReport -> CashAccountReportScreen(
+                store = store,
+                initialTab = current.initialTab,
+                onBack = { screen = TallyScreen.Home },
+            )
         }
 
         if (showMenu) {
@@ -184,14 +211,11 @@ fun AppRoot() {
                 onItemClick = { item ->
                     showMenu = false
                     when (item.key) {
-                        "ledger" -> screen = TallyScreen.Home
-                        "due" -> screen = TallyScreen.Home
-                        "cash" -> {
-                            screen = TallyScreen.Cashbox
-                            scope.launch { store.refreshCashbox() }
-                        }
-                        "expense" -> screen = CASH_FORMS.getValue("expense")
-                        "report" -> screen = TallyScreen.Home
+                        "ledger" -> screen = TallyScreen.SalesPurchaseReport
+                        "expense" -> screen = TallyScreen.ExpenseReport
+                        "due" -> screen = TallyScreen.DueReport
+                        "cash" -> screen = TallyScreen.CashAccountReport(0)
+                        "report" -> screen = TallyScreen.CashAccountReport(1)
                         else -> Unit
                     }
                 },

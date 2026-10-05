@@ -307,7 +307,95 @@ data class Bootstrap(
     }
 }
 
+data class TransactionDetailItem(
+    val id: String,
+    val kind: String,
+    val title: String,
+    val tone: String,
+    val description: String,
+    val amountDisplay: String,
+    val amountRaw: Double,
+    val dateDisplay: String,
+    val customerName: String,
+    val customerPhone: String,
+    val customerType: String,
+) {
+    companion object {
+        fun from(o: JSONObject) = TransactionDetailItem(
+            id = o.optString("id"),
+            kind = o.optString("kind"),
+            title = o.optString("title"),
+            tone = o.optString("tone", "out"),
+            description = o.optString("description", ""),
+            amountDisplay = o.optString("amountDisplay", "০.০০"),
+            amountRaw = o.optDouble("amountRaw", 0.0),
+            dateDisplay = o.optString("dateDisplay", ""),
+            customerName = o.optString("customerName", ""),
+            customerPhone = o.optString("customerPhone", ""),
+            customerType = o.optString("customerType", "customer"),
+        )
+    }
+}
+
+data class CashboxEntryItem(
+    val id: String,
+    val kind: String,
+    val title: String,
+    val amountDisplay: String,
+    val amountRaw: Double,
+    val description: String,
+    val category: String,
+    val dateDisplay: String,
+) {
+    companion object {
+        fun from(o: JSONObject) = CashboxEntryItem(
+            id = o.optString("id"),
+            kind = o.optString("kind"),
+            title = o.optString("title"),
+            amountDisplay = o.optString("amountDisplay", "০.০০"),
+            amountRaw = o.optDouble("amountRaw", 0.0),
+            description = o.optString("description", ""),
+            category = o.optString("category", ""),
+            dateDisplay = o.optString("dateDisplay", ""),
+        )
+    }
+}
+
+data class ReportSummaryData(
+    val sales: String,
+    val purchases: String,
+    val paymentsReceived: String,
+    val paymentsMade: String,
+    val cashSales: String,
+    val cashPurchases: String,
+    val expenses: String,
+    val ownerIn: String,
+    val ownerOut: String,
+    val generatedLabel: String,
+    val monthLabel: String,
+) {
+    companion object {
+        private fun money(o: JSONObject, k: String) =
+            o.optJSONObject(k)?.optString("display") ?: "০.০০"
+
+        fun from(o: JSONObject) = ReportSummaryData(
+            sales = money(o, "sales"),
+            purchases = money(o, "purchases"),
+            paymentsReceived = money(o, "paymentsReceived"),
+            paymentsMade = money(o, "paymentsMade"),
+            cashSales = money(o, "cashSales"),
+            cashPurchases = money(o, "cashPurchases"),
+            expenses = money(o, "expenses"),
+            ownerIn = money(o, "ownerIn"),
+            ownerOut = money(o, "ownerOut"),
+            generatedLabel = o.optString("generatedLabel", ""),
+            monthLabel = o.optString("monthLabel", ""),
+        )
+    }
+}
+
 // ---- small json helpers ---------------------------------------------------
+
 
 private inline fun <T> JSONArray?.mapObjects(crossinline f: (JSONObject) -> T): List<T> {
     if (this == null) return emptyList()

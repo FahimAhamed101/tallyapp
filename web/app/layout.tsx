@@ -6,6 +6,11 @@ export const metadata: Metadata = {
   title: 'টালিখাতা অ্যাডমিন',
   description:
     'TallyKhata clone — Next.js API + superadmin panel. Every endpoint of the Android backend, reimplemented as App Router route handlers.',
+  icons: {
+    icon: '/icon.png',
+    shortcut: '/icon.png',
+    apple: '/apple-icon.png',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

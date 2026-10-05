@@ -258,6 +258,31 @@ class AppStore {
             connected = true
         }
 
+    suspend fun loadTransactions(): Result<List<TransactionDetailItem>> = call {
+        val o = ApiClient.get("/transactions")
+        val arr = o.optJSONArray("items") ?: org.json.JSONArray()
+        val list = mutableListOf<TransactionDetailItem>()
+        for (i in 0 until arr.length()) {
+            arr.optJSONObject(i)?.let { list.add(TransactionDetailItem.from(it)) }
+        }
+        list
+    }
+
+    suspend fun loadCashboxEntries(kind: String? = null): Result<List<CashboxEntryItem>> = call {
+        val path = if (kind.isNullOrBlank()) "/cashbox/entries" else "/cashbox/entries?kind=$kind"
+        val o = ApiClient.get(path)
+        val arr = o.optJSONArray("items") ?: org.json.JSONArray()
+        val list = mutableListOf<CashboxEntryItem>()
+        for (i in 0 until arr.length()) {
+            arr.optJSONObject(i)?.let { list.add(CashboxEntryItem.from(it)) }
+        }
+        list
+    }
+
+    suspend fun loadReportSummary(): Result<ReportSummaryData> = call {
+        ReportSummaryData.from(ApiClient.get("/reports/summary"))
+    }
+
     // ---- photo upload -----------------------------------------------------
 
     /**

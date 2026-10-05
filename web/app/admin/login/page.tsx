@@ -44,7 +44,18 @@ export default function AdminLoginPage() {
     <div className="login-wrap">
       <form className="login-card" onSubmit={submit}>
         <div className="login-brand">
-          <div className="login-mark">ট</div>
+          <img
+            src="/app-logo.png"
+            alt="TallyKhata Logo"
+            width={64}
+            height={64}
+            style={{
+              borderRadius: 16,
+              objectFit: 'cover',
+              boxShadow: '0 6px 16px rgba(0, 0, 0, 0.12)',
+              marginBottom: 10,
+            }}
+          />
           <h1>অ্যাডমিন প্যানেল</h1>
           <p>শুধুমাত্র অ্যাডমিন অ্যাকাউন্টের জন্য</p>
         </div>

@@ -195,6 +195,7 @@ object TallyIcons {
 
     val ChevronRight = listOf("M9.5 5.5L16 12L9.5 18.5")
     val ChevronLeft = listOf("M14.5 5.5L8 12L14.5 18.5")
+    val ArrowLeft = listOf("M19 12L5 12", "M12 19L5 12L12 5")
 
     val PersonPlus = listOf(
         "M9.6 11.4C12 11.4 13.9 9.5 13.9 7.1C13.9 4.7 12 2.8 9.6 2.8" +

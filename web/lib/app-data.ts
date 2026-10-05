@@ -146,7 +146,7 @@ export async function getMenu(user: UserLike): Promise<MenuView> {
           { key: 'ledger', label: 'বেচা কেনা হিসাব', icon: 'note_edit', count: txCount },
           { key: 'expense', label: 'খরচ', icon: 'arrow_out', count: expenseCount },
           { key: 'due', label: 'বাকি হিসাব', icon: 'inbox_doc', count: dueCount },
-          { key: 'cash', label: 'কাশ হিসাব', icon: 'document', count: cashCount },
+          { key: 'cash', label: 'ক্যাশ হিসাব', icon: 'document', count: cashCount },
           { key: 'report', label: 'মালিকের রিপোর্ট', icon: 'chart', count: dayCount },
         ],
       },

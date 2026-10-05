@@ -43,7 +43,13 @@ export default function PanelChrome({
     <div className="app">
       <header className="topbar">
         <div className="brand">
-          <span className="brand-mark">ট</span>
+          <img
+            src="/app-logo.png"
+            alt="TallyKhata"
+            width={32}
+            height={32}
+            style={{ borderRadius: 8, objectFit: 'cover', display: 'inline-block' }}
+          />
           <span>
             টালিখাতা
             <small>SUPERADMIN</small>

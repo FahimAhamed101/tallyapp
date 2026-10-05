@@ -1,7 +1,10 @@
 package com.workbuddy.tallyclone.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.res.painterResource
+import com.workbuddy.tallyclone.R
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -259,20 +262,13 @@ private fun DrawerFooter(version: String) {
             .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            Modifier
-                .size(30.dp)
-                .clip(RoundedCornerShape(7.dp))
-                .background(TallyColors.CtaRed),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = "ট",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-            )
-        }
+        Image(
+            painter = painterResource(id = R.drawable.app_logo),
+            contentDescription = "TallyKhata",
+            modifier = Modifier
+                .size(32.dp)
+                .clip(RoundedCornerShape(8.dp)),
+        )
         Spacer(Modifier.width(8.dp))
         Text(
             text = "টালিখাতা",

@@ -1,8 +1,11 @@
 package com.workbuddy.tallyclone.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.res.painterResource
+import com.workbuddy.tallyclone.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -84,20 +87,13 @@ fun AuthScaffold(
 
                 Column(Modifier.padding(start = 24.dp, end = 24.dp, bottom = 26.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            Modifier
-                                .size(44.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(TallyColors.CtaRed),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text = "ট",
-                                fontSize = 24.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                            )
-                        }
+                        Image(
+                            painter = painterResource(id = R.drawable.app_logo),
+                            contentDescription = "TallyKhata",
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(12.dp)),
+                        )
                         Spacer(Modifier.width(12.dp))
                         Text(
                             text = "টালিখাতা",
