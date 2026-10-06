@@ -3,6 +3,7 @@ import Customer from '@/lib/models/Customer';
 import Transaction from '@/lib/models/Transaction';
 import { badRequest, handler, notFound, parseAmount, readJson } from '@/lib/api-helpers';
 import { requireAuth } from '@/lib/auth';
+import { resolveScope, scopeFilter } from '@/lib/business';
 import { balanceFor, customerView, ledgerHeadline } from '@/lib/ledger';
 import { entryView } from '@/lib/app-data';
 import { formatZodError, transactionCreateSchema } from '@/lib/validators';
@@ -22,10 +23,15 @@ type Ctx = RouteContext<{ id: string }>;
 
 export const GET = handler(async (req: NextRequest, ctx: Ctx) => {
   const { user } = await requireAuth(req);
-  const doc = await Customer.findOne({ _id: ctx.params.id, owner: user._id }).catch(() => null);
+  const { scope } = await resolveScope(req, user);
+  const doc = await Customer.findOne({ _id: ctx.params.id, ...scopeFilter(scope) }).catch(() => null);
   if (!doc) throw notFound('কাস্টমার পাওয়া যায়নি');
 
-  const entries = await Transaction.find({ customer: doc._id, owner: user._id }).sort({
+  const entries = await Transaction.find({
+    customer: doc._id,
+    owner: user._id,
+    business: doc.business,
+  }).sort({
     date: -1,
   });
   return NextResponse.json({ items: entries.map(entryView) });
@@ -33,8 +39,9 @@ export const GET = handler(async (req: NextRequest, ctx: Ctx) => {
 
 export const POST = handler(async (req: NextRequest, ctx: Ctx) => {
   const { user } = await requireAuth(req);
+  const { scope } = await resolveScope(req, user);
 
-  const doc = await Customer.findOne({ _id: ctx.params.id, owner: user._id }).catch(() => null);
+  const doc = await Customer.findOne({ _id: ctx.params.id, ...scopeFilter(scope) }).catch(() => null);
   if (!doc) throw notFound('কাস্টমার পাওয়া যায়নি');
 
   const body = await readJson(req);
@@ -59,6 +66,7 @@ export const POST = handler(async (req: NextRequest, ctx: Ctx) => {
 
   const created = await Transaction.create({
     owner: user._id,
+    business: doc.business,
     customer: doc._id,
     kind: resolvedKind,
     amount: amt,

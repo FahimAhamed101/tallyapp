@@ -1,11 +1,12 @@
 import './env';
+import { ENDPOINTS } from '../lib/endpoints';
 
 /**
  * Behavioural coverage for the endpoints `smoke.ts` only *probes*.
  *
  *   npm run api-coverage        (server must already be up on :4000)
  *
- * `smoke.ts` walks all 48 catalogue entries, but for many of them it only proves
+ * `smoke.ts` walks every catalogue entry, but for many of them it only proves
  * the path is registered (a 405 probe) — it never sends a valid request. That
  * leaves a whole class of endpoint untested: the admin PATCH/DELETE routes, the
  * profile edit, the password change, wallet open-account, and the upload path
@@ -78,6 +79,8 @@ let txId = '';
 let cashId = '';
 let uploadPublicId = '';
 let uploadUrl = '';
+/** মাল্টি ব্যবসা: the throwaway account's second book, if one is still standing. */
+let businessId = '';
 
 async function main() {
   console.log(`API behavioural coverage against ${BASE}\n`);
@@ -179,6 +182,119 @@ async function main() {
   check('wallet has 8 services', opened.json?.wallet?.services?.length === 8,
     `got ${opened.json?.wallet?.services?.length}`);
 
+  // ---- GET / PATCH /api/settings ---------------------------------------
+  //
+  // The সেটিংস screen's whole job is to remember two switches and a PIN, so the
+  // assertion that matters is the round trip: flip, re-read, confirm the server
+  // kept it. The PIN adds a sharper property — the response must prove a PIN
+  // *exists* without ever carrying it, which is the entire point of storing a
+  // salted hash rather than the digits.
+  console.log('\nGET + PATCH /api/settings');
+  const toBnDigits = (s: string) => s.replace(/[0-9]/g, (d) => '০১২৩৪৫৬৭৮৯'[Number(d)]);
+
+  const settingsBefore = await req('GET', '/api/settings', { token: userToken });
+  check('GET /api/settings -> 200', settingsBefore.status === 200, `got ${settingsBefore.status}`);
+  check('the view carries both general toggles as booleans',
+    typeof settingsBefore.json?.decimalAmount === 'boolean' &&
+      typeof settingsBefore.json?.notificationSound === 'boolean',
+    JSON.stringify(settingsBefore.json));
+  check('the view carries every label the screen renders',
+    typeof settingsBefore.json?.decimalExample === 'string' &&
+      typeof settingsBefore.json?.notificationSubtitle === 'string' &&
+      typeof settingsBefore.json?.phoneLabel === 'string' &&
+      typeof settingsBefore.json?.pinLabel === 'string',
+    JSON.stringify(settingsBefore.json));
+  // The client's hint text is rendered from these, so a rule change on the
+  // server cannot leave the screen describing a PIN length it no longer accepts.
+  check('the server publishes its own PIN rule',
+    settingsBefore.json?.pinMin === 4 && settingsBefore.json?.pinMax === 6,
+    `${settingsBefore.json?.pinMin}..${settingsBefore.json?.pinMax}`);
+
+  const flipped = await req('PATCH', '/api/settings', {
+    token: userToken,
+    body: { decimalAmount: false, notificationSound: false },
+  });
+  check('PATCH /api/settings -> 200', flipped.status === 200, `got ${flipped.status}`);
+
+  const settingsAfter = await req('GET', '/api/settings', { token: userToken });
+  check('both toggles persisted',
+    settingsAfter.json?.decimalAmount === false && settingsAfter.json?.notificationSound === false,
+    JSON.stringify({ d: settingsAfter.json?.decimalAmount, n: settingsAfter.json?.notificationSound }));
+  check('the decimal example follows the toggle off',
+    settingsAfter.json?.decimalExample === 'উদাহরণঃ ১২,০০০',
+    String(settingsAfter.json?.decimalExample));
+
+  const badPin = await req('PATCH', '/api/settings', {
+    token: userToken,
+    body: { pin: '1234567' },
+  });
+  check('a PIN longer than the rule -> 400', badPin.status === 400, `got ${badPin.status}`);
+
+  const pinSet = await req('PATCH', '/api/settings', {
+    token: userToken,
+    body: { pin: '৪৩২১' },
+  });
+  check('setting a PIN -> 200', pinSet.status === 200, `got ${pinSet.status}`);
+  check('the response reports the PIN as set', pinSet.json?.pinSet === true,
+    String(pinSet.json?.pinSet));
+  check('the PIN row switches to পরিবর্তন', pinSet.json?.pinLabel === 'PIN পরিবর্তন করুন',
+    String(pinSet.json?.pinLabel));
+  check('the response never carries the PIN or its hash',
+    !('pin' in (pinSet.json || {})) &&
+      !('pinHash' in (pinSet.json || {})) &&
+      !pinSet.text.includes('৪৩২১'),
+    pinSet.text.slice(0, 160));
+
+  const pinCleared = await req('PATCH', '/api/settings', {
+    token: userToken,
+    body: { pin: '' },
+  });
+  check('clearing the PIN -> pinSet false', pinCleared.json?.pinSet === false,
+    String(pinCleared.json?.pinSet));
+
+  // ---- মোবাইল নম্বর পরিবর্তন (PATCH /api/profile) -----------------------
+  //
+  // The number is the login credential, so "did the field change" is the weak
+  // assertion. The strong one is that the new number actually signs in and the
+  // old one stops working — and that a number another account owns is refused
+  // instead of surfacing as a raw duplicate-key 500 from the unique index.
+  console.log('\nমোবাইল নম্বর পরিবর্তন');
+  const movedPhone = `+88013${String(Date.now()).slice(-8)}`;
+
+  const badPhone = await req('PATCH', '/api/profile', {
+    token: userToken,
+    body: { phone: '12' },
+  });
+  check('an unusable phone number -> 400', badPhone.status === 400, `got ${badPhone.status}`);
+
+  const takenPhone = await req('PATCH', '/api/profile', {
+    token: userToken,
+    body: { phone: ADMIN_PHONE },
+  });
+  check("another account's number -> 409", takenPhone.status === 409, `got ${takenPhone.status}`);
+
+  const phoneChange = await req('PATCH', '/api/profile', {
+    token: userToken,
+    body: { phone: movedPhone },
+  });
+  check('changing the mobile number -> 200', phoneChange.status === 200, `got ${phoneChange.status}`);
+
+  const afterPhone = await req('GET', '/api/settings', { token: userToken });
+  check('the সেটিংস screen shows the new number',
+    String(afterPhone.json?.phoneSubtitle || '').includes(toBnDigits(movedPhone)),
+    String(afterPhone.json?.phoneSubtitle));
+
+  const byNewPhone = await req('POST', '/api/auth/login', {
+    body: { phone: movedPhone, password: USER_PASSWORD_2 },
+  });
+  check('the new number signs in -> 200', byNewPhone.status === 200, `got ${byNewPhone.status}`);
+
+  const byOldPhone = await req('POST', '/api/auth/login', {
+    body: { phone: USER_PHONE, password: USER_PASSWORD_2 },
+  });
+  check('the old number no longer signs in -> 401', byOldPhone.status === 401,
+    `got ${byOldPhone.status}`);
+
   // ---- fixtures for the admin routes ------------------------------------
   const cust = await req('POST', '/api/customers', {
     token: userToken,
@@ -228,6 +344,33 @@ async function main() {
     'admin customer list total is consistent with the page',
     typeof allCust.json?.total === 'number' && allCust.json.total >= custItems.length,
     `total ${allCust.json?.total} vs ${custItems.length} rows`,
+  );
+
+  // The balance the panel shows must equal the balance the owner sees.
+  //
+  // This is the assertion that catches the aggregation-casting trap: mongoose
+  // casts `Model.find()` filters but NOT aggregation `$match`, so a 24-hex
+  // *string* owner id matches nothing and every panel balance silently reads
+  // ৳০.০০ while the owner-scoped screens show the real figures. Both views go
+  // through the same `customerView`, so the only way they can differ is a
+  // broken balance lookup.
+  const mineList = await req('GET', '/api/customers', { token: userToken });
+  const mineRow = (mineList.json?.items || []).find((x: any) => x.id === customerId);
+  const panelRow = custItems.find((x: any) => x.id === customerId);
+
+  check('the fixture customer is visible to its owner', Boolean(mineRow));
+  check(
+    "the panel's balance equals the owner-scoped balance (aggregation casting)",
+    Boolean(mineRow && panelRow) &&
+      panelRow.amountRaw === mineRow.amountRaw &&
+      panelRow.amountTone === mineRow.amountTone,
+    `panel=${panelRow?.amountDisplay}/${panelRow?.amountTone} ` +
+      `owner=${mineRow?.amountDisplay}/${mineRow?.amountTone}`,
+  );
+  check(
+    "the panel's balance is not silently zero",
+    Boolean(panelRow) && Math.abs(panelRow.amountRaw) > 0.004,
+    `panel amountRaw=${panelRow?.amountRaw}`,
   );
 
   console.log('\nGET /api/admin/transactions  (must not be owner-scoped)');
@@ -301,12 +444,197 @@ async function main() {
   check('admin user rename persisted', userReRead.json?.user?.name === `${USER_NAME} (admin edited)`,
     `got "${userReRead.json?.user?.name}"`);
 
+  // ---- মাল্টি ব্যবসা (X-Business-Id) ------------------------------------
+  //
+  // Two things need proving here that smoke.ts only asserts structurally:
+  //   1. the header really scopes reads and writes, and
+  //   2. the *admin* routes deliberately do NOT honour it — the panel exists to
+  //      see a shopkeeper's whole footprint, across every book they keep.
+  console.log('\nমাল্টি ব্যবসা (X-Business-Id)');
+  const bizList = await req('GET', '/api/businesses', { token: userToken });
+  check('GET /api/businesses -> 200', bizList.status === 200, `got ${bizList.status}`);
+  const primaryBiz: string = bizList.json?.items?.[0]?.id || '';
+  check('the throwaway account has a primary book', Boolean(primaryBiz));
+
+  const bizCreated = await req('POST', '/api/businesses', {
+    token: userToken,
+    body: { name: 'কভারেজ বই ২' },
+  });
+  check('POST /api/businesses -> 201', bizCreated.status === 201, `got ${bizCreated.status}`);
+  businessId = bizCreated.json?.business?.id || '';
+
+  const secondBookCustomer = await req('POST', '/api/customers', {
+    token: userToken,
+    headers: { 'X-Business-Id': businessId },
+    body: { name: `বই২ কাস্টমার ${stamp}`, phone: '01799999999', type: 'customer' },
+  });
+  check('create a customer in the second book -> 201',
+    secondBookCustomer.status === 201, `got ${secondBookCustomer.status}`);
+  const secondCustomerId: string = secondBookCustomer.json?.customer?.id || '';
+
+  // The admin panel must span every book. `counts` and `summary` come from the
+  // whole-account scope (`business: null`), not from whichever book the header
+  // happened to name — if that regressed, the panel would silently under-report.
+  const adminUser = await req('GET', `/api/admin/users/${userId}`, { token: adminToken });
+  check('admin sees a whole-account customer count',
+    (adminUser.json?.counts?.customers ?? 0) >= 2,
+    `saw ${adminUser.json?.counts?.customers}`);
+  check('admin summary spans every book, not one',
+    (adminUser.json?.summary?.customerCount ?? 0) >= 2,
+    `saw ${adminUser.json?.summary?.customerCount}`);
+
+  const adminCustomers = await req(
+    'GET',
+    `/api/admin/customers?q=${encodeURIComponent(stamp)}&limit=50`,
+    { token: adminToken },
+  );
+  const adminNames: string[] = ((adminCustomers.json?.items ?? []) as any[]).map((c) =>
+    String(c.name),
+  );
+  check('admin lists customers from both books',
+    adminNames.some((n) => n.includes(stamp)) && adminNames.includes(`বই২ কাস্টমার ${stamp}`),
+    adminNames.join(' | '));
+
+  // Rename through the override the Android client actually uses.
+  const bizRenamed = await req('POST', `/api/businesses/${businessId}`, {
+    token: userToken,
+    headers: { 'X-HTTP-Method-Override': 'PATCH' },
+    body: { name: 'কভারেজ বই ২ (নতুন)' },
+  });
+  check('POST + X-HTTP-Method-Override renames -> 200',
+    bizRenamed.status === 200, `got ${bizRenamed.status}`);
+  const bizReread = await req('GET', '/api/businesses', { token: userToken });
+  check('the rename persisted',
+    (bizReread.json?.items ?? []).some(
+      (b: any) => b.id === businessId && b.name === 'কভারেজ বই ২ (নতুন)',
+    ));
+
+  // A book belongs to one account and no other — the admin's token included.
+  const foreignPatch = await req('POST', `/api/businesses/${businessId}`, {
+    token: adminToken,
+    headers: { 'X-HTTP-Method-Override': 'PATCH' },
+    body: { name: 'চুরি' },
+  });
+  check("another account cannot rename someone else's book -> 404",
+    foreignPatch.status === 404, `got ${foreignPatch.status}`);
+
+  const bizDeleted = await req('DELETE', `/api/businesses/${businessId}`, { token: userToken });
+  check('DELETE /api/businesses/:id -> 200', bizDeleted.status === 200, `got ${bizDeleted.status}`);
+  check("the cascade removed the second book's customer",
+    bizDeleted.json?.removed?.customers === 1, JSON.stringify(bizDeleted.json?.removed));
+  check('the second book\'s customer is really gone',
+    (await req('GET', `/api/customers/${secondCustomerId}`, {
+      token: userToken,
+      headers: { 'X-Business-Id': primaryBiz },
+    })).status === 404);
+
+  const primaryAfter = await req('GET', '/api/customers', {
+    token: userToken,
+    headers: { 'X-Business-Id': primaryBiz },
+  });
+  check('the primary book kept its own customers',
+    (primaryAfter.json?.items ?? []).length >= 1,
+    `saw ${(primaryAfter.json?.items ?? []).length}`);
+
+  // Cleared, so cleanup does not try to delete it a second time.
+  businessId = '';
+
+  // ---- GET /api/admin/businesses ----------------------------------------
+  //
+  // The panel's job is to see *every* account's books, so the property that
+  // matters is that this list spans more than one owner. On a single-account
+  // fixture it would pass whether or not it filtered by the caller.
+  console.log('\nGET /api/admin/businesses');
+  const bizAdmin = await req('GET', '/api/admin/businesses?limit=100', { token: adminToken });
+  check('admin business list -> 200', bizAdmin.status === 200, `got ${bizAdmin.status}`);
+  const bizRows: any[] = bizAdmin.json?.items ?? [];
+  check('admin business list is not empty', bizRows.length > 0, `saw ${bizRows.length}`);
+  check(
+    'admin business list spans more than one owner (NOT owner-scoped)',
+    new Set(bizRows.map((b) => b.ownerId)).size > 1,
+    `owners=${new Set(bizRows.map((b) => b.ownerId)).size}`,
+  );
+  check(
+    "the throwaway account's book is visible to the admin",
+    bizRows.some((b) => b.ownerId === userId),
+  );
+  check(
+    'each row carries its owner and per-book tallies',
+    bizRows.every(
+      (b) =>
+        b.ownerName &&
+        typeof b.customerCount === 'number' &&
+        typeof b.transactionCount === 'number' &&
+        b.receivable &&
+        typeof b.receivable.display === 'string',
+    ),
+  );
+
+  const bizAsUser = await req('GET', '/api/admin/businesses', { token: userToken });
+  check('a plain user gets 403 from the admin business list', bizAsUser.status === 403,
+    `got ${bizAsUser.status}`);
+
+  // The admin path must honour the same invariant as the owner path. After the
+  // section above the throwaway account is down to one book, so its last book
+  // is the right target.
+  const lastBookId: string = bizRows.find((b) => b.ownerId === userId)?.id || '';
+  if (lastBookId) {
+    const adminLastDelete = await req('DELETE', `/api/admin/businesses/${lastBookId}`, {
+      token: adminToken,
+    });
+    check("admin cannot delete an account's last book -> 409",
+      adminLastDelete.status === 409, `got ${adminLastDelete.status}`);
+  }
+
+  // A second book, so the admin cascade can be exercised for real.
+  const spare = await req('POST', '/api/businesses', {
+    token: userToken,
+    body: { name: 'অ্যাডমিন ক্যাসকেড বই' },
+  });
+  const spareId: string = spare.json?.business?.id || '';
+  const spareCustomer = await req('POST', '/api/customers', {
+    token: userToken,
+    headers: { 'X-Business-Id': spareId },
+    body: { name: `অ্যাডমিন ক্যাসকেড ${stamp}`, type: 'customer' },
+  });
+  check('a book with a customer, for the admin cascade -> 201',
+    spareCustomer.status === 201, `got ${spareCustomer.status}`);
+
+  const adminRename = await req('PATCH', `/api/admin/businesses/${spareId}`, {
+    token: adminToken,
+    body: { name: 'অ্যাডমিন নাম' },
+  });
+  check('admin PATCH business -> 200', adminRename.status === 200, `got ${adminRename.status}`);
+  check('admin rename persisted', adminRename.json?.business?.name === 'অ্যাডমিন নাম',
+    `got ${adminRename.json?.business?.name}`);
+
+  const adminDelete = await req('DELETE', `/api/admin/businesses/${spareId}`, {
+    token: adminToken,
+  });
+  check('admin DELETE business -> 200', adminDelete.status === 200, `got ${adminDelete.status}`);
+  check(
+    "admin delete cascaded the book's customer (same cascade as the owner path)",
+    adminDelete.json?.removed?.customers === 1,
+    JSON.stringify(adminDelete.json?.removed),
+  );
+
   // ---- GET /api/admin/endpoints -----------------------------------------
   console.log('\nGET /api/admin/endpoints');
   const cat = await req('GET', '/api/admin/endpoints', { token: adminToken });
   check('catalogue -> 200', cat.status === 200, `got ${cat.status}`);
-  check('catalogue lists 48 endpoints', cat.json?.endpoints?.length === 48,
-    `got ${cat.json?.endpoints?.length}`);
+  // Derived from the module rather than hard-coded, so adding a route can never
+  // leave this assertion quietly wrong the way a literal "48" did.
+  check(
+    `catalogue lists all ${ENDPOINTS.length} endpoints`,
+    cat.json?.endpoints?.length === ENDPOINTS.length,
+    `got ${cat.json?.endpoints?.length}, expected ${ENDPOINTS.length}`,
+  );
+  check(
+    'the served catalogue matches the module exactly',
+    JSON.stringify((cat.json?.endpoints ?? []).map((e: any) => `${e.method} ${e.path}`)) ===
+      JSON.stringify(ENDPOINTS.map((e) => `${e.method} ${e.path}`)),
+    'served order/content differs from lib/endpoints.ts',
+  );
   check('catalogue entries carry method + path',
     Array.isArray(cat.json?.endpoints) && cat.json.endpoints.every((e: any) => e.method && e.path));
 
@@ -394,6 +722,10 @@ async function cleanup() {
   }
   if (cashId) {
     await req('DELETE', `/api/admin/cashbox/${cashId}`, { token: adminToken }).catch(() => {});
+  }
+  // Only still set if the মাল্টি ব্যবসা section threw partway through.
+  if (businessId) {
+    await req('DELETE', `/api/businesses/${businessId}`, { token: userToken }).catch(() => {});
   }
   if (txId) {
     await req('DELETE', `/api/admin/transactions/${txId}`, { token: adminToken }).catch(() => {});

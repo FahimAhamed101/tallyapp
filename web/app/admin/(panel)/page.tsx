@@ -66,6 +66,14 @@ export default function DashboardPage() {
             {stats.customers.customers} কাস্টমার · {stats.customers.suppliers} সাপ্লায়ার
           </div>
         </div>
+        <div className="stat gold">
+          <div className="k">ব্যবসা (মাল্টি ব্যবসা)</div>
+          <div className="v">{stats.businesses.total}</div>
+          <div className="s">
+            {stats.businesses.primaries} প্রাইমারি ·{' '}
+            {stats.businesses.multiBookAccounts} অ্যাকাউন্টে একাধিক বই
+          </div>
+        </div>
         <div className="stat green">
           <div className="k">লেনদেন</div>
           <div className="v">{stats.transactions.total}</div>

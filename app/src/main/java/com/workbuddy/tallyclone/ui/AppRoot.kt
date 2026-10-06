@@ -15,6 +15,8 @@ import androidx.compose.ui.Modifier
 import com.workbuddy.tallyclone.data.ApiClient
 import com.workbuddy.tallyclone.data.AppStore
 import com.workbuddy.tallyclone.data.CustomerItem
+import com.workbuddy.tallyclone.data.StockDetail
+import com.workbuddy.tallyclone.data.StockItem
 import kotlinx.coroutines.launch
 
 /**
@@ -43,6 +45,55 @@ sealed interface TallyScreen {
     data object ExpenseReport : TallyScreen
     data object DueReport : TallyScreen
     data class CashAccountReport(val initialTab: Int = 0) : TallyScreen
+
+    /** স্টক হিসাব — the product list behind the home tab's second tile. */
+    data object StockList : TallyScreen
+
+    /** নতুন পণ্য ([item] null) / পণ্য সম্পাদনা. */
+    data class StockForm(val item: StockItem?, val returnTo: TallyScreen) : TallyScreen
+
+    /** One product and its স্টক ইন / স্টক আউট history. */
+    data class StockDetail(val itemId: String) : TallyScreen
+
+    /** সেটিংস — the drawer's সেটিংস row. */
+    data object Settings : TallyScreen
+
+    /** অ্যাপ সিকিউরিটি → PIN সেট করুন / PIN পরিবর্তন করুন. */
+    data object Pin : TallyScreen
+
+    /** প্রোফাইল সেটিংস → মোবাইল নম্বর পরিবর্তন. */
+    data object PhoneChange : TallyScreen
+
+    /** ব্যবসার নোট — checklist notes. */
+    data object BusinessNotes : TallyScreen
+
+    /** মালিকের রিপোর্ট — owner's report. */
+    data object OwnerReport : TallyScreen
+}
+
+/**
+ * Where a drawer row leads, or null when it leads nowhere yet.
+ *
+ * Pulled out of the `when` in [AppRoot] because the failure this guards against
+ * is invisible from a screenshot: every row rendered identically whether it was
+ * wired or fell through to `else -> Unit`. সেটিংস was in exactly that state —
+ * the server shipped the entry, the drawer drew it, and tapping it did nothing.
+ * As a pure function the mapping can be asserted directly, which a `when` buried
+ * inside a composable cannot be.
+ *
+ * `null` is a real answer: 'refer' has no screen yet, and saying so explicitly
+ * is better than an `else -> Unit` that silently swallows every future key.
+ */
+internal fun menuScreenFor(key: String): TallyScreen? = when (key) {
+    "ledger" -> TallyScreen.SalesPurchaseReport
+    "expense" -> TallyScreen.ExpenseReport
+    "due" -> TallyScreen.DueReport
+    "cash" -> TallyScreen.CashAccountReport(0)
+    "report" -> TallyScreen.CashAccountReport(1)
+    "settings" -> TallyScreen.Settings
+    "notes" -> TallyScreen.BusinessNotes
+    "owner_report" -> TallyScreen.OwnerReport
+    else -> null
 }
 
 private val CASH_FORMS = mapOf(
@@ -62,6 +113,30 @@ fun AppRoot() {
     var showMenu by remember { mutableStateOf(false) }
     var showRegister by remember { mutableStateOf(false) }
 
+    /**
+     * মাল্টি ব্যবসা. Held here rather than inside HomeScreen so the sheet stays
+     * put across the recomposition a business switch triggers — HomeScreen's
+     * whole tree is rebuilt when the active book changes.
+     */
+    var showBusinesses by remember { mutableStateOf(false) }
+
+    /**
+     * স্টক হিসাব detail. Held here rather than inside the screen so the detail
+     * screen stays a pure renderer — every network call in this app is issued
+     * from `AppRoot` or `AppStore`, never from a composable's `LaunchedEffect`.
+     */
+    var stockDetail by remember { mutableStateOf<StockDetail?>(null) }
+    var stockDetailLoading by remember { mutableStateOf(false) }
+
+    /** Re-reads one product after a movement or an edit changed it. */
+    val loadStockDetail: (String) -> Unit = { id ->
+        stockDetailLoading = true
+        scope.launch {
+            store.loadStockItem(id).onSuccess { stockDetail = it }
+            stockDetailLoading = false
+        }
+    }
+
     // Cold start: if a token was stored, confirm it with the server.
     LaunchedEffect(Unit) { store.restoreSession() }
 
@@ -76,6 +151,7 @@ fun AppRoot() {
         if (store.isLoggedIn) {
             screen = TallyScreen.Home
             showMenu = false
+            showBusinesses = false
             store.bootstrap()
         }
     }
@@ -109,10 +185,16 @@ fun AppRoot() {
         return
     }
 
-    // Hardware back: close the drawer first, then pop back to the home tab.
-    BackHandler(enabled = showMenu || screen != TallyScreen.Home) {
+    // Hardware back: close the drawer or the sheet first, then step back through
+    // সেটিংস's two pushed screens, then pop to the home tab.
+    BackHandler(enabled = showMenu || showBusinesses || screen != TallyScreen.Home) {
         when {
+            showBusinesses -> showBusinesses = false
             showMenu -> showMenu = false
+            screen == TallyScreen.Pin || screen == TallyScreen.PhoneChange ->
+                screen = TallyScreen.Settings
+            screen == TallyScreen.OwnerReport ->
+                screen = TallyScreen.CashAccountReport(1)
             else -> screen = TallyScreen.Home
         }
     }
@@ -147,12 +229,32 @@ fun AppRoot() {
                 onCustomerClick = { screen = TallyScreen.Ledger(it.id) },
                 onAddCustomer = { screen = TallyScreen.CustomerForm(null) },
                 onEditCustomer = { screen = TallyScreen.CustomerForm(it) },
+                onOpenBusinesses = {
+                    showBusinesses = true
+                    // Another device may have added or renamed a book since the
+                    // last bootstrap, so the sheet always opens on fresh data.
+                    scope.launch { store.refreshBusinesses() }
+                },
+                onOpenStock = {
+                    // A stale detail from a previous visit must not flash behind
+                    // the list, so it is dropped on the way in.
+                    stockDetail = null
+                    screen = TallyScreen.StockList
+                    scope.launch { store.refreshStock() }
+                },
+                onOpenNotes = {
+                    screen = TallyScreen.BusinessNotes
+                    scope.launch { store.refreshNotes() }
+                },
             )
 
             TallyScreen.Cashbox -> CashboxScreen(
                 store = store,
                 onTabSelected = onTabSelected,
                 onRowClick = { key -> CASH_FORMS[key]?.let { screen = it } },
+                // Tab 0 is literally "ক্যাশবাক্স রিপোর্ট" — this screen *is* the
+                // cashbox dashboard, so that is where its রিপোর্ট pill goes.
+                onOpenReport = { screen = TallyScreen.CashAccountReport(0) },
             )
 
             TallyScreen.Wallet -> WalletScreen(store = store, onTabSelected = onTabSelected)
@@ -162,6 +264,9 @@ fun AppRoot() {
                 customerId = current.customerId,
                 onBack = { screen = TallyScreen.Home },
                 onEdit = { screen = TallyScreen.CustomerForm(it) },
+                // A customer's ledger is বেচা কেনা — the same mapping the sidebar
+                // menu already uses for its "ledger" entry.
+                onOpenReport = { screen = TallyScreen.SalesPurchaseReport },
             )
 
             is TallyScreen.CustomerForm -> AddCustomerScreen(
@@ -176,6 +281,9 @@ fun AppRoot() {
                 kind = current.kind,
                 title = current.title,
                 amountLabel = current.amountLabel,
+                // Tab 1 is "ক্যাশ রিপোর্ট" — this form writes cash movements, so
+                // that is the report it belongs to.
+                onOpenReport = { screen = TallyScreen.CashAccountReport(1) },
             )
 
             TallyScreen.SalesPurchaseReport -> SalesPurchaseReportScreen(
@@ -197,12 +305,100 @@ fun AppRoot() {
                 store = store,
                 initialTab = current.initialTab,
                 onBack = { screen = TallyScreen.Home },
+                onOpenOwnerReport = { screen = TallyScreen.OwnerReport },
             )
+
+            TallyScreen.StockList -> StockListScreen(
+                store = store,
+                onBack = { screen = TallyScreen.Home },
+                onOpenItem = { id ->
+                    stockDetail = null
+                    screen = TallyScreen.StockDetail(id)
+                    loadStockDetail(id)
+                },
+                onAddItem = { screen = TallyScreen.StockForm(null, TallyScreen.StockList) },
+            )
+
+            is TallyScreen.StockForm -> StockFormScreen(
+                store = store,
+                item = current.item,
+                // Both the toolbar's back arrow and a successful save land here,
+                // so editing from the detail returns to that product rather than
+                // dumping the user back at the list.
+                onBack = {
+                    screen = current.returnTo
+                    (current.returnTo as? TallyScreen.StockDetail)?.let { loadStockDetail(it.itemId) }
+                },
+            )
+
+            is TallyScreen.StockDetail -> StockDetailScreen(
+                store = store,
+                detail = stockDetail,
+                loading = stockDetailLoading,
+                onBack = { screen = TallyScreen.StockList },
+                onEdit = { item -> screen = TallyScreen.StockForm(item, current) },
+                onReload = { loadStockDetail(current.itemId) },
+            )
+
+            TallyScreen.Settings -> SettingsScreen(
+                store = store,
+                settings = store.settings,
+                onBack = { screen = TallyScreen.Home },
+                onRetry = { scope.launch { store.refreshSettings() } },
+                // One key per request: the server applies exactly what it is
+                // sent, so flipping a toggle can never overwrite the other one
+                // with a value this side guessed.
+                onToggleDecimal = { value -> scope.launch { store.setDecimalAmount(value) } },
+                onToggleSound = { value -> scope.launch { store.setNotificationSound(value) } },
+                onToggleVoice = { value -> scope.launch { store.setVoiceNotification(value) } },
+                onOpenPhoneChange = { screen = TallyScreen.PhoneChange },
+                onOpenPin = { screen = TallyScreen.Pin },
+            )
+
+            TallyScreen.Pin -> PinScreen(
+                settings = store.settings,
+                onBack = { screen = TallyScreen.Settings },
+                // Returning to সেটিংস on success is what makes the change
+                // visible: the row's wording comes from the server's answer, so
+                // staying put would leave "PIN সেট করুন" on screen after the PIN
+                // had in fact been set.
+                onSave = { pin ->
+                    scope.launch { store.setPin(pin).onSuccess { screen = TallyScreen.Settings } }
+                },
+                onClear = {
+                    scope.launch { store.clearPin().onSuccess { screen = TallyScreen.Settings } }
+                },
+            )
+
+            TallyScreen.PhoneChange -> PhoneChangeScreen(
+                currentPhone = store.profile?.phone ?: "",
+                onBack = { screen = TallyScreen.Settings },
+                onSave = { phone ->
+                    scope.launch {
+                        store.changePhone(phone).onSuccess { screen = TallyScreen.Settings }
+                    }
+                },
+            )
+
+            TallyScreen.BusinessNotes -> BusinessNotesScreen(
+                store = store,
+                onBack = { screen = TallyScreen.Home },
+            )
+
+            TallyScreen.OwnerReport -> OwnerReportScreen(
+                store = store,
+                onBack = { screen = TallyScreen.Home },
+            )
+        }
+
+        if (showBusinesses) {
+            BusinessSheet(store = store, onDismiss = { showBusinesses = false })
         }
 
         if (showMenu) {
             MenuDrawer(
-                store = store,
+                menu = store.menu,
+                profile = store.profile,
                 onDismiss = { showMenu = false },
                 onLogout = {
                     showMenu = false
@@ -210,13 +406,12 @@ fun AppRoot() {
                 },
                 onItemClick = { item ->
                     showMenu = false
-                    when (item.key) {
-                        "ledger" -> screen = TallyScreen.SalesPurchaseReport
-                        "expense" -> screen = TallyScreen.ExpenseReport
-                        "due" -> screen = TallyScreen.DueReport
-                        "cash" -> screen = TallyScreen.CashAccountReport(0)
-                        "report" -> screen = TallyScreen.CashAccountReport(1)
-                        else -> Unit
+                    menuScreenFor(item.key)?.let { target ->
+                        screen = target
+                        // সেটিংস is the one drawer destination whose data is not
+                        // already in a bootstrap slice, so it is fetched on the
+                        // way in — otherwise the screen opens on an empty state.
+                        if (target == TallyScreen.Settings) scope.launch { store.refreshSettings() }
                     }
                 },
             )

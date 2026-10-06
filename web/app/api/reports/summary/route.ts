@@ -3,6 +3,7 @@ import Transaction from '@/lib/models/Transaction';
 import CashboxEntry from '@/lib/models/CashboxEntry';
 import { handler } from '@/lib/api-helpers';
 import { requireAuth } from '@/lib/auth';
+import { resolveScope, scopeFilter } from '@/lib/business';
 import { dateBn, money, MONTHS, toBn } from '@/lib/bengali';
 
 /** GET /api/reports/summary?days=30 — the রিপোর্ট pill. */
@@ -11,18 +12,20 @@ export const dynamic = 'force-dynamic';
 
 export const GET = handler(async (req: NextRequest) => {
   const { user } = await requireAuth(req);
-  const owner = user._id;
+  const { scope } = await resolveScope(req, user);
+  // The রিপোর্ট pill reports on the book you are in, not the whole account.
+  const match = scopeFilter(scope);
 
   const days = Math.min(Math.max(Number(req.nextUrl.searchParams.get('days')) || 30, 1), 365);
   const from = new Date(Date.now() - days * 86400000);
 
   const [txAgg, cashAgg] = await Promise.all([
     Transaction.aggregate([
-      { $match: { owner, date: { $gte: from } } },
+      { $match: { ...match, date: { $gte: from } } },
       { $group: { _id: '$kind', total: { $sum: '$amount' }, count: { $sum: 1 } } },
     ]),
     CashboxEntry.aggregate([
-      { $match: { owner, date: { $gte: from } } },
+      { $match: { ...match, date: { $gte: from } } },
       { $group: { _id: '$kind', total: { $sum: '$amount' }, count: { $sum: 1 } } },
     ]),
   ]);

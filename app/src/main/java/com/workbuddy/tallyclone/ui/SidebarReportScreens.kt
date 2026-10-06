@@ -911,6 +911,7 @@ fun CashAccountReportScreen(
     store: AppStore,
     initialTab: Int = 0,
     onBack: () -> Unit,
+    onOpenOwnerReport: (() -> Unit)? = null,
 ) {
     var selectedTab by remember { mutableIntStateOf(initialTab) }
     val cashbox = store.cashbox
@@ -987,7 +988,7 @@ fun CashAccountReportScreen(
         if (selectedTab == 0) {
             CashboxReportTab(cashbox = cashbox)
         } else {
-            CashReportTab(cashbox = cashbox)
+            CashReportTab(cashbox = cashbox, onOpenOwnerReport = onOpenOwnerReport)
         }
     }
 }
@@ -1135,7 +1136,10 @@ private fun CashboxReportTab(cashbox: com.workbuddy.tallyclone.data.CashboxDashb
 
 /** Tab 2: ক্যাশ রিপোর্ট (Screenshot 5) */
 @Composable
-private fun CashReportTab(cashbox: com.workbuddy.tallyclone.data.CashboxDashboard?) {
+private fun CashReportTab(
+    cashbox: com.workbuddy.tallyclone.data.CashboxDashboard?,
+    onOpenOwnerReport: (() -> Unit)? = null,
+) {
     val currentCash = cashbox?.currentCash ?: "৫,০০০.০০"
     val todayIn = cashbox?.todayIn ?: "৫,০০০.০০"
     val todayOut = cashbox?.todayOut ?: "০.০০"
@@ -1253,6 +1257,7 @@ private fun CashReportTab(cashbox: com.workbuddy.tallyclone.data.CashboxDashboar
                     .clip(RoundedCornerShape(8.dp))
                     .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(8.dp))
                     .background(Color.White)
+                    .clickable { onOpenOwnerReport?.invoke() }
                     .padding(14.dp),
             ) {
                 Column {

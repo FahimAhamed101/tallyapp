@@ -12,7 +12,12 @@ import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
  * `tally_session` cookie, not a bearer token.
  */
 
-export type AuthLevel = 'public' | 'bearer' | 'session' | 'admin';
+import type { EndpointDef } from '@/lib/endpoints';
+
+// Re-exported from the catalogue rather than re-declared: these two types used
+// to be duplicated here, and the copies silently drifted the moment a new route
+// group was added. The catalogue in `lib/endpoints.ts` is the only definition.
+export type { AuthLevel, EndpointDef } from '@/lib/endpoints';
 
 export interface OwnerInfo {
   id: string;
@@ -118,6 +123,7 @@ export interface AdminCashboxEntry {
 
 export interface PlatformStats {
   users: { total: number; admins: number; disabled: number; newLast7Days: number };
+  businesses: { total: number; primaries: number; multiBookAccounts: number };
   customers: { total: number; customers: number; suppliers: number };
   transactions: { total: number; byKind: Record<string, { count: number; total: number }> };
   cashbox: { total: number; byKind: Record<string, { count: number; total: number }> };
@@ -125,16 +131,50 @@ export interface PlatformStats {
   generatedAt: string;
 }
 
-export interface EndpointDef {
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
-  path: string;
-  auth: AuthLevel;
-  group: 'system' | 'auth' | 'uploads' | 'app' | 'customers' | 'cashbox' | 'admin';
-  summary: string;
-  alias?: boolean;
-  params?: string;
-  body?: string;
-  returns?: string;
+/** One book (ব্যবসা), as the panel's cross-account list renders it. */
+export interface AdminBusiness {
+  id: string;
+  name: string;
+  isPrimary: boolean;
+  ownerId: string;
+  ownerName: string;
+  ownerPhone: string;
+  customerCount: number;
+  supplierCount: number;
+  customerLabel: string;
+  transactionCount: number;
+  receivable: { raw: number; display: string };
+  createdAt: string;
+}
+
+/** One stock item (স্টক হিসাব), as the panel's cross-account list renders it. */
+export interface AdminStockItem {
+  id: string;
+  name: string;
+  unit: string;
+  businessId: string;
+  ownerId: string;
+  ownerName: string;
+  ownerPhone: string;
+  purchasePrice: { raw: number; display: string };
+  salePrice: { raw: number; display: string };
+  openingStock: number;
+  lowStockThreshold: number;
+  /** Derived from the movements, never stored — the same figure the app shows. */
+  quantity: number;
+  quantityLabel: string;
+  costValue: { raw: number; display: string };
+  movementCount: number;
+  lowStock: boolean;
+  lowStockLabel: string;
+  note: string;
+  createdAt: string;
+}
+
+export interface EndpointsResponse {
+  count: number;
+  groups: { key: string; label: string; count: number }[];
+  endpoints: EndpointDef[];
 }
 
 export interface AdminSession {
@@ -155,6 +195,8 @@ export const api = createApi({
     'Session',
     'Stats',
     'User',
+    'Business',
+    'Stock',
     'Customer',
     'Transaction',
     'Cashbox',

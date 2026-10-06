@@ -1,4 +1,5 @@
 import User from './models/User';
+import Business from './models/Business';
 import Customer from './models/Customer';
 import Transaction from './models/Transaction';
 import CashboxEntry from './models/CashboxEntry';
@@ -48,6 +49,7 @@ export const escapeRegex = (s: unknown): string =>
 
 export interface PlatformStats {
   users: { total: number; admins: number; disabled: number; newLast7Days: number };
+  businesses: { total: number; primaries: number; multiBookAccounts: number };
   customers: { total: number; customers: number; suppliers: number };
   transactions: { total: number; byKind: Record<string, { count: number; total: number }> };
   cashbox: { total: number; byKind: Record<string, { count: number; total: number }> };
@@ -70,6 +72,9 @@ export async function platformStats(): Promise<PlatformStats> {
     photoEntries,
     txAgg,
     cashAgg,
+    businessTotal,
+    businessPrimaries,
+    multiBookAgg,
   ] = await Promise.all([
     User.countDocuments({}),
     User.countDocuments({ role: 'admin' }),
@@ -84,6 +89,15 @@ export async function platformStats(): Promise<PlatformStats> {
     ]),
     CashboxEntry.aggregate([
       { $group: { _id: '$kind', count: { $sum: 1 }, total: { $sum: '$amount' } } },
+    ]),
+    Business.countDocuments({}),
+    Business.countDocuments({ isPrimary: true }),
+    // How many shopkeepers actually use multi-business — the number that says
+    // whether the feature is worth keeping. One group, one count.
+    Business.aggregate([
+      { $group: { _id: '$owner', n: { $sum: 1 } } },
+      { $match: { n: { $gt: 1 } } },
+      { $count: 'n' },
     ]),
   ]);
 
@@ -107,6 +121,11 @@ export async function platformStats(): Promise<PlatformStats> {
       admins: adminTotal,
       disabled: disabledTotal,
       newLast7Days: newUsers,
+    },
+    businesses: {
+      total: businessTotal,
+      primaries: businessPrimaries,
+      multiBookAccounts: (multiBookAgg as { n: number }[])[0]?.n || 0,
     },
     customers: {
       total: customerTotal + supplierTotal,

@@ -5,6 +5,7 @@ import Wallet from '@/lib/models/Wallet';
 import Customer from '@/lib/models/Customer';
 import Transaction from '@/lib/models/Transaction';
 import CashboxEntry from '@/lib/models/CashboxEntry';
+import Business from '@/lib/models/Business';
 import { badRequest, handler, isObjectId, notFound, readJson } from '@/lib/api-helpers';
 import { requireAdmin } from '@/lib/auth';
 import { adminUserUpdateSchema, formatZodError } from '@/lib/validators';
@@ -34,14 +35,18 @@ export const GET = handler(
     await requireAdmin(req);
     const user = await loadUser(ctx.params.id);
 
-    const [profile, wallet, summaryOut, customers, transactions, cashbox] = await Promise.all([
-      getProfile(user),
-      getWallet(user._id),
-      getSummary(user._id),
-      Customer.countDocuments({ owner: user._id }),
-      Transaction.countDocuments({ owner: user._id }),
-      CashboxEntry.countDocuments({ owner: user._id }),
-    ]);
+    const [profile, wallet, summaryOut, customers, transactions, cashbox, businesses] =
+      await Promise.all([
+        getProfile(user),
+        getWallet(user._id),
+        // Whole-account scope: an admin looking at a user should see the totals
+        // across all of that user's businesses, not one book.
+        getSummary({ owner: user._id, business: null }),
+        Customer.countDocuments({ owner: user._id }),
+        Transaction.countDocuments({ owner: user._id }),
+        CashboxEntry.countDocuments({ owner: user._id }),
+        Business.countDocuments({ owner: user._id }),
+      ]);
 
     const recentTx = await Transaction.find({ owner: user._id })
       .sort({ date: -1 })
@@ -65,7 +70,7 @@ export const GET = handler(
       profile,
       wallet,
       summary: summaryOut,
-      counts: { customers, transactions, cashbox },
+      counts: { businesses, customers, transactions, cashbox },
       recentTransactions: recentTx.map((t) => ({
         id: String(t._id),
         kind: t.kind,
@@ -153,10 +158,11 @@ export const DELETE = handler(
     }
 
     // Cascade: everything the account owns goes with it.
-    const [customers, transactions, cashbox] = await Promise.all([
+    const [customers, transactions, cashbox, businesses] = await Promise.all([
       Customer.deleteMany({ owner: user._id }),
       Transaction.deleteMany({ owner: user._id }),
       CashboxEntry.deleteMany({ owner: user._id }),
+      Business.deleteMany({ owner: user._id }),
     ]);
     await Promise.all([
       Profile.deleteMany({ owner: user._id }),
@@ -171,6 +177,7 @@ export const DELETE = handler(
         customers: customers.deletedCount || 0,
         transactions: transactions.deletedCount || 0,
         cashbox: cashbox.deletedCount || 0,
+        businesses: businesses.deletedCount || 0,
       },
     });
   },

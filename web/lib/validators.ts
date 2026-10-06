@@ -17,8 +17,11 @@ export function formatZodError(err: z.ZodError): { field: string; message: strin
   }));
 }
 
-/** Bengali-digit-tolerant amount: accepts 12, "১২", "৳ 1,250.50". */
-const amountField = z.preprocess((v) => {
+/**
+ * Normalises a Bengali-digit-tolerant number: accepts 12, "১২", "৳ 1,250.50".
+ * Returns `NaN` for anything unparseable so the caller's schema reports it.
+ */
+function normalizeNumber(v: unknown): number {
   if (v === null || v === undefined || v === '') return 0;
   const bn: Record<string, string> = {
     '০': '0', '১': '1', '২': '2', '৩': '3', '৪': '4',
@@ -27,7 +30,19 @@ const amountField = z.preprocess((v) => {
   const normalized = String(v).replace(/[০-৯]/g, (d) => bn[d]).replace(/[৳,\s]/g, '');
   const n = Number(normalized);
   return Number.isFinite(n) ? n : NaN;
-}, z.number().positive('সঠিক পরিমাণ দিন'));
+}
+
+/** Bengali-digit-tolerant amount. Must be strictly positive. */
+const amountField = z.preprocess(normalizeNumber, z.number().positive('সঠিক পরিমাণ দিন'));
+
+/**
+ * Same tolerance, but 0 is allowed.
+ *
+ * Needed for prices and counts, where zero is a real answer rather than a
+ * missing one: a shopkeeper may not know a purchase price yet, and an item may
+ * legitimately have no opening stock.
+ */
+const nonNegativeField = z.preprocess(normalizeNumber, z.number().min(0, 'সঠিক পরিমাণ দিন'));
 
 /**
  * Booleans need an explicit preprocess: `boolField` maps the *string*
@@ -139,6 +154,59 @@ export const cashboxCreateSchema = z.object({
   date: optionalDate,
 });
 
+// ---- businesses -----------------------------------------------------------
+
+export const businessCreateSchema = z.object({
+  name: z
+    .string({ required_error: 'ব্যবসার নাম দিন' })
+    .trim()
+    .min(1, 'ব্যবসার নাম দিন')
+    .max(60, 'নাম অনেক বড়'),
+  category: z.string().optional(),
+  isPersonal: z.boolean().optional(),
+});
+
+export const businessUpdateSchema = z.object({
+  name: z.string().trim().min(1, 'ব্যবসার নাম দিন').max(60, 'নাম অনেক বড়').optional(),
+  /** Promote this book to the account default. */
+  isPrimary: boolField.optional(),
+});
+
+// ---- stock (স্টক হিসাব) -----------------------------------------------------
+
+export const stockItemCreateSchema = z.object({
+  name: z
+    .string({ required_error: 'পণ্যের নাম দিন' })
+    .trim()
+    .min(1, 'পণ্যের নাম দিন')
+    .max(80, 'নাম অনেক বড়'),
+  /** পিস / কেজি / লিটার — free text, as in the reference app. */
+  unit: z.string().trim().max(20, 'একক অনেক বড়').optional(),
+  purchasePrice: nonNegativeField.optional(),
+  salePrice: nonNegativeField.optional(),
+  openingStock: nonNegativeField.optional(),
+  /** 0 means "do not warn about low stock". */
+  lowStockThreshold: nonNegativeField.optional(),
+  note: z.string().trim().max(200, 'বিবরণ অনেক বড়').optional(),
+  photoUrl: z.string().trim().optional(),
+  photoPublicId: z.string().trim().optional(),
+});
+
+/** Every field optional — PATCH sends only what changed. */
+export const stockItemUpdateSchema = stockItemCreateSchema.partial();
+
+export const stockMovementCreateSchema = z.object({
+  direction: z.enum(['in', 'out'], {
+    required_error: 'স্টক ইন না আউট তা দিন',
+    invalid_type_error: 'স্টক ইন না আউট তা দিন',
+  }),
+  /** A movement of zero is meaningless, so this is strictly positive. */
+  quantity: amountField,
+  unitCost: nonNegativeField.optional(),
+  note: z.string().trim().max(200, 'বিবরণ অনেক বড়').optional(),
+  date: optionalDate,
+});
+
 // ---- uploads --------------------------------------------------------------
 
 export const uploadSchema = z.object({
@@ -196,4 +264,20 @@ export const adminCashboxUpdateSchema = z.object({
   category: z.string().optional(),
   hasPhoto: boolField.optional(),
   date: z.union([z.string(), z.date()]).optional(),
+});
+
+// ---- ব্যবসার নোট ------------------------------------------------------------
+
+const noteText = z.string().trim().min(1, 'নোট লিখুন').max(500, 'নোটটি অনেক বড়');
+
+/** New checklist line. */
+export const noteCreateSchema = z.object({
+  text: noteText,
+  done: boolField.optional(),
+});
+
+/** Edit or tick a line; only the keys sent are touched. */
+export const noteUpdateSchema = z.object({
+  text: noteText.optional(),
+  done: boolField.optional(),
 });

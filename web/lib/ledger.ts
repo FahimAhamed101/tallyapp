@@ -1,3 +1,4 @@
+import { asObjectId } from './object-id';
 import Transaction from './models/Transaction';
 import { amount, relativeBn } from './bengali';
 
@@ -58,10 +59,13 @@ export function shape(row: GroupRow | undefined | null): Balance {
   };
 }
 
+// `asObjectId` now lives in `object-id.ts`, a leaf module, so `scope.ts` can use
+// it too without dragging the models into the import graph.
+
 /** Map of customerId(string) -> balance, scoped to one user's ledger. */
 export async function balancesFor(owner: OwnerId, ids: unknown[]): Promise<Map<string, Balance>> {
-  const match: Record<string, unknown> = { owner };
-  if (ids && ids.length) match.customer = { $in: ids };
+  const match: Record<string, unknown> = { owner: asObjectId(owner) };
+  if (ids && ids.length) match.customer = { $in: ids.map(asObjectId) };
 
   const rows = (await Transaction.aggregate([
     { $match: match },
@@ -75,7 +79,7 @@ export async function balancesFor(owner: OwnerId, ids: unknown[]): Promise<Map<s
 
 export async function balanceFor(owner: OwnerId, id: unknown): Promise<Balance> {
   const rows = (await Transaction.aggregate([
-    { $match: { owner, customer: id } },
+    { $match: { owner: asObjectId(owner), customer: asObjectId(id) } },
     GROUP_STAGE,
   ])) as GroupRow[];
   return shape(rows[0]);

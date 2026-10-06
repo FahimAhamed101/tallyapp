@@ -40,6 +40,7 @@ fun CashboxScreen(
     store: AppStore,
     onTabSelected: (Int) -> Unit,
     onRowClick: (String) -> Unit,
+    onOpenReport: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val data = store.cashbox
@@ -56,7 +57,7 @@ fun CashboxScreen(
         ) {
             Column {
                 GoldHeader(
-                    businessName = store.profile?.name ?: "…",
+                    businessName = store.toolbarName,
                     inboxBadge = store.profile?.inboxUnread ?: 0,
                 )
                 CashboxSummary(
@@ -66,6 +67,7 @@ fun CashboxScreen(
                     todayOut = data?.todayOut ?: "০.০০",
                     receivable = data?.receivable ?: "০.০০",
                     payable = data?.payable ?: "০.০০",
+                    onOpenReport = onOpenReport,
                 )
             }
         }
@@ -98,6 +100,7 @@ private fun CashboxSummary(
     todayOut: String,
     receivable: String,
     payable: String,
+    onOpenReport: () -> Unit,
 ) {
     Column(
         Modifier
@@ -146,7 +149,7 @@ private fun CashboxSummary(
                     background = TallyColors.ReportPill,
                     textColor = TallyColors.TextPrimary,
                     icon = TallyIcons.Document,
-                    onClick = {},
+                    onClick = onOpenReport,
                 )
                 Spacer(Modifier.weight(1f))
                 PillButton(

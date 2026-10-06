@@ -2,23 +2,27 @@ import { NextResponse, type NextRequest } from 'next/server';
 import CashboxEntry from '@/lib/models/CashboxEntry';
 import { badRequest, handler, parseAmount, readJson } from '@/lib/api-helpers';
 import { requireAuth } from '@/lib/auth';
+import { resolveScope, scopeFilter } from '@/lib/business';
 import { cashboxDashboard, cashboxEntryView } from '@/lib/app-data';
 import { cashboxCreateSchema, formatZodError } from '@/lib/validators';
 
 /**
  * GET  /api/cashbox/entries?kind=&limit=
  * POST /api/cashbox/entries -> ক্যাশ বেচা / খরচ / মালিক দিল / মালিক নিল forms
+ *
+ * Scoped to the active business: each book keeps its own cash box.
  */
 
 export const dynamic = 'force-dynamic';
 
 export const GET = handler(async (req: NextRequest) => {
   const { user } = await requireAuth(req);
+  const { scope } = await resolveScope(req, user);
 
   const kind = req.nextUrl.searchParams.get('kind');
   const limit = Math.min(Number(req.nextUrl.searchParams.get('limit')) || 100, 500);
 
-  const filter: Record<string, unknown> = { owner: user._id };
+  const filter: Record<string, unknown> = scopeFilter(scope);
   if (kind) filter.kind = kind;
 
   const entries = await CashboxEntry.find(filter).sort({ date: -1 }).limit(limit);
@@ -27,6 +31,7 @@ export const GET = handler(async (req: NextRequest) => {
 
 export const POST = handler(async (req: NextRequest) => {
   const { user } = await requireAuth(req);
+  const { business, scope } = await resolveScope(req, user);
 
   const body = await readJson(req);
   const parsed = cashboxCreateSchema.safeParse(body);
@@ -39,6 +44,7 @@ export const POST = handler(async (req: NextRequest) => {
 
   const created = await CashboxEntry.create({
     owner: user._id,
+    business: business._id,
     kind: parsed.data.kind,
     amount: amt,
     description: String(parsed.data.description || '').trim(),
@@ -51,7 +57,7 @@ export const POST = handler(async (req: NextRequest) => {
     {
       ok: true,
       entry: cashboxEntryView(created),
-      dashboard: await cashboxDashboard(user._id),
+      dashboard: await cashboxDashboard(scope),
     },
     { status: 201 },
   );

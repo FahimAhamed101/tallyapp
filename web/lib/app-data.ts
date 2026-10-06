@@ -5,6 +5,7 @@ import Transaction from './models/Transaction';
 import CashboxEntry, { type CashboxKind } from './models/CashboxEntry';
 import { amount, dateBn, money, relativeBn, toBn, initialsFor } from './bengali';
 import { balancesFor, type OwnerId } from './ledger';
+import { type Scope, scopeFilter } from './scope';
 import { summary, type Summary } from './summary';
 
 /**
@@ -119,14 +120,15 @@ export interface MenuView {
   profile: ProfileView;
 }
 
-export async function getMenu(user: UserLike): Promise<MenuView> {
+export async function getMenu(user: UserLike, scope: Scope): Promise<MenuView> {
   const owner = user._id;
+  const filter = scopeFilter(scope);
   const [profile, txCount, expenseCount, cashCount, customers] = await Promise.all([
     getProfile(user),
-    Transaction.countDocuments({ owner }),
-    CashboxEntry.countDocuments({ owner, kind: 'expense' }),
-    CashboxEntry.countDocuments({ owner }),
-    Customer.find({ owner }, '_id'),
+    Transaction.countDocuments(filter),
+    CashboxEntry.countDocuments({ ...filter, kind: 'expense' }),
+    CashboxEntry.countDocuments(filter),
+    Customer.find(filter, '_id'),
   ]);
 
   const balances = await balancesFor(owner as OwnerId, customers.map((c) => c._id));
@@ -135,7 +137,7 @@ export async function getMenu(user: UserLike): Promise<MenuView> {
     if (Math.abs(b.receivable - b.payable) > 0.004) dueCount += 1;
   });
 
-  const days = await CashboxEntry.distinct('date', { owner });
+  const days = await CashboxEntry.distinct('date', filter);
   const dayCount = new Set(days.map((d: Date) => new Date(d).toDateString())).size;
 
   return {
@@ -172,8 +174,8 @@ export interface SummaryView {
   transactionCount: number;
 }
 
-export async function getSummary(owner: OwnerId): Promise<SummaryView> {
-  const s: Summary = await summary(owner);
+export async function getSummary(scope: Scope): Promise<SummaryView> {
+  const s: Summary = await summary(scope);
   return {
     receivable: money(s.receivable),
     payable: money(s.payable),
@@ -250,9 +252,9 @@ export interface CashboxDashboard {
   }[];
 }
 
-/** Everything the ক্যাশবক্স dashboard needs, derived from one user's entries. */
-export async function cashboxDashboard(owner: OwnerId): Promise<CashboxDashboard> {
-  const entries = await CashboxEntry.find({ owner }).lean();
+/** Everything the ক্যাশবক্স dashboard needs, derived from one book's entries. */
+export async function cashboxDashboard(scope: Scope): Promise<CashboxDashboard> {
+  const entries = await CashboxEntry.find(scopeFilter(scope)).lean();
   const flow = CashboxEntry.FLOW;
   const today = startOfToday();
 
@@ -274,7 +276,7 @@ export async function cashboxDashboard(owner: OwnerId): Promise<CashboxDashboard
     }
   });
 
-  const s = await summary(owner);
+  const s = await summary(scope);
 
   return {
     todaySale: money(todaySale),

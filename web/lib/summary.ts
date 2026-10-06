@@ -1,11 +1,16 @@
 import Customer from './models/Customer';
 import Transaction from './models/Transaction';
-import { balancesFor, type OwnerId } from './ledger';
+import { balancesFor } from './ledger';
+import { type Scope, scopeFilter } from './scope';
 
 /**
  * The two headline totals on the home tab plus the list-header counters, for
- * one user's own book. Only net-positive customers count toward পাবো, only
+ * one business's book. Only net-positive customers count toward পাবো, only
  * net-negative toward দেবো.
+ *
+ * Takes a `Scope` rather than a bare owner so the numbers follow the book the
+ * client is looking at; passing `business: null` widens it to the whole account,
+ * which is what the admin panel does.
  */
 export interface Summary {
   receivable: number;
@@ -15,9 +20,10 @@ export interface Summary {
   transactionCount: number;
 }
 
-export async function summary(owner: OwnerId): Promise<Summary> {
-  const customers = await Customer.find({ owner }, '_id type');
-  const balances = await balancesFor(owner, customers.map((c) => c._id));
+export async function summary(scope: Scope): Promise<Summary> {
+  const filter = scopeFilter(scope);
+  const customers = await Customer.find(filter, '_id type');
+  const balances = await balancesFor(scope.owner, customers.map((c) => c._id));
 
   let receivable = 0;
   let payable = 0;
@@ -38,6 +44,6 @@ export async function summary(owner: OwnerId): Promise<Summary> {
     payable,
     customerCount,
     supplierCount,
-    transactionCount: await Transaction.countDocuments({ owner }),
+    transactionCount: await Transaction.countDocuments(filter),
   };
 }

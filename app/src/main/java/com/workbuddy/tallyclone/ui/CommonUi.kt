@@ -50,6 +50,7 @@ fun GoldHeader(
     businessName: String = "fahim",
     goldLabel: String = "গোল্ড (ট্রায়াল)",
     inboxBadge: Int = 0,
+    onBusinessClick: (() -> Unit)? = null,
 ) {
     Row(
         Modifier
@@ -60,7 +61,7 @@ fun GoldHeader(
         verticalAlignment = Alignment.Top,
     ) {
         Column(Modifier.padding(top = 4.dp)) {
-            BusinessChip(businessName)
+            BusinessChip(businessName, onClick = onBusinessClick)
             Spacer(Modifier.height(4.dp))
             Box(Modifier.height(21.dp), contentAlignment = Alignment.CenterStart) {
                 Text(
@@ -83,12 +84,13 @@ fun GoldHeader(
 }
 
 @Composable
-private fun BusinessChip(name: String) {
+private fun BusinessChip(name: String, onClick: (() -> Unit)? = null) {
     Row(
         Modifier
             .height(24.dp)
             .clip(RoundedCornerShape(50))
             .background(TallyColors.CardCream)
+            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
             .padding(start = 7.dp, end = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

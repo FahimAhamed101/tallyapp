@@ -55,7 +55,7 @@ fun WalletScreen(store: AppStore, onTabSelected: (Int) -> Unit) {
         ) {
             Column {
                 GoldHeader(
-                    businessName = store.profile?.name ?: "…",
+                    businessName = store.toolbarName,
                     inboxBadge = store.profile?.inboxUnread ?: 0,
                 )
                 WalletServicesCard(wallet?.services ?: emptyList())

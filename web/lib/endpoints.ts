@@ -11,6 +11,12 @@
  *   'bearer'  — Android app: Authorization: Bearer <token>
  *   'session' — any logged-in user via cookie or bearer
  *   'admin'   — cookie/bearer AND role === 'admin'
+ *
+ * Every `session` route under /api/customers, /api/cashbox, /api/transactions
+ * and /api/summary also honours an optional `X-Business-Id` header naming which
+ * of the account's books (মাল্টি ব্যবসা) the call is about. Omit it and the call
+ * lands on the account's primary book — which is exactly what a client built
+ * before multi-business support did, so those builds keep working.
  */
 
 export type AuthLevel = 'public' | 'bearer' | 'session' | 'admin';
@@ -20,7 +26,18 @@ export interface EndpointDef {
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   path: string;
   auth: AuthLevel;
-  group: 'system' | 'auth' | 'uploads' | 'app' | 'customers' | 'cashbox' | 'admin';
+  group:
+    | 'system'
+    | 'auth'
+    | 'uploads'
+    | 'app'
+    | 'businesses'
+    | 'stock'
+    | 'notes'
+    | 'customers'
+    | 'cashbox'
+    | 'admin';
+
   summary: string;
   /** True when POST also serves PATCH via X-HTTP-Method-Override. */
   alias?: boolean;
@@ -175,11 +192,29 @@ export const ENDPOINTS: EndpointDef[] = [
   },
   {
     method: 'GET',
+    path: '/api/settings',
+    auth: 'session',
+    group: 'app',
+    summary: 'সেটিংস: the two general toggles, PIN state and the account phone',
+    returns: '{ decimalAmount, notificationSound, pinSet, pinLabel, phoneLabel, … }',
+  },
+  {
+    method: 'PATCH',
+    path: '/api/settings',
+    auth: 'session',
+    group: 'app',
+    summary: 'Flip a general toggle, or set / clear the অ্যাপ সিকিউরিটি PIN',
+    alias: true,
+    body: '{ decimalAmount?, notificationSound?, pin? }',
+    returns: 'settings',
+  },
+  {
+    method: 'GET',
     path: '/api/bootstrap',
     auth: 'session',
     group: 'app',
     summary: 'One call that fills the home tab on cold start',
-    returns: '{ user, profile, summary, wallet, menu }',
+    returns: '{ user, profile, summary, wallet, menu, businesses, activeBusinessId, activeBusinessName, maxBusinesses }',
   },
   {
     method: 'GET',
@@ -189,6 +224,142 @@ export const ENDPOINTS: EndpointDef[] = [
     summary: 'The রিপোর্ট pill: period totals',
     params: 'days',
     returns: '{ days, range, sales, purchases, expenses, ... }',
+  },
+
+  // ---- businesses (মাল্টি ব্যবসা) -------------------------------------------
+  {
+    method: 'GET',
+    path: '/api/businesses',
+    auth: 'session',
+    group: 'businesses',
+    summary: 'The switcher sheet: every book on the account, with live counts',
+    returns: '{ items: BusinessView[], total, max, label }',
+  },
+  {
+    method: 'POST',
+    path: '/api/businesses',
+    auth: 'session',
+    group: 'businesses',
+    summary: "'+ নতুন ব্যবসা' — a shopkeeper may keep at most five books",
+    body: '{ name }',
+    returns: '{ business }',
+  },
+  {
+    method: 'PATCH',
+    path: '/api/businesses/:id',
+    auth: 'session',
+    group: 'businesses',
+    summary: 'Rename a book, or promote it to primary',
+    alias: true,
+    params: 'id',
+    body: '{ name?, isPrimary? }',
+    returns: '{ business }',
+  },
+  {
+    method: 'DELETE',
+    path: '/api/businesses/:id',
+    auth: 'session',
+    group: 'businesses',
+    summary: 'Delete a book and cascade its customers, ledger and cash box',
+    params: 'id',
+    returns: '{ ok, deletedId, removed }',
+  },
+
+  // ---- stock (স্টক হিসাব) ----------------------------------------------------
+  {
+    method: 'GET',
+    path: '/api/stock',
+    auth: 'session',
+    group: 'stock',
+    summary: 'Every item in this book, with derived quantity, value and low-stock flag',
+    returns: '{ items: StockItemView[], total, summary }',
+  },
+  {
+    method: 'POST',
+    path: '/api/stock',
+    auth: 'session',
+    group: 'stock',
+    summary: "'নতুন পণ্য' — rejects a name that already exists in the book",
+    body: '{ name, unit?, purchasePrice?, salePrice?, openingStock?, lowStockThreshold?, note? }',
+    returns: '{ item }',
+  },
+  {
+    method: 'GET',
+    path: '/api/stock/:id',
+    auth: 'session',
+    group: 'stock',
+    summary: 'One item plus its movement history, newest first',
+    params: 'id',
+    returns: '{ item, movements, total }',
+  },
+  {
+    method: 'PATCH',
+    path: '/api/stock/:id',
+    auth: 'session',
+    group: 'stock',
+    summary: 'Edit an item; only the keys sent are touched',
+    alias: true,
+    params: 'id',
+    body: '{ name?, unit?, purchasePrice?, salePrice?, openingStock?, lowStockThreshold?, note? }',
+    returns: '{ item }',
+  },
+  {
+    method: 'DELETE',
+    path: '/api/stock/:id',
+    auth: 'session',
+    group: 'stock',
+    summary: 'Delete an item, its movements and its Cloudinary photo',
+    params: 'id',
+    returns: '{ ok, deletedId, removed }',
+  },
+  {
+    method: 'POST',
+    path: '/api/stock/:id/movements',
+    auth: 'session',
+    group: 'stock',
+    summary: 'স্টক ইন / স্টক আউট — append-only, returns the refreshed item',
+    params: 'id',
+    body: '{ direction, quantity, unitCost?, note?, date? }',
+    returns: '{ movement, item }',
+  },
+
+  // ---- notes (ব্যবসার নোট) -------------------------------------------------
+  {
+    method: 'GET',
+    path: '/api/notes',
+    auth: 'session',
+    group: 'notes',
+    summary: 'The checklist for this book, newest first',
+    returns: '{ items: NoteView[], total, pending }',
+  },
+  {
+    method: 'POST',
+    path: '/api/notes',
+    auth: 'session',
+    group: 'notes',
+    summary: 'Add a checklist line',
+    body: '{ text, done? }',
+    returns: '{ note }',
+  },
+  {
+    method: 'PATCH',
+    path: '/api/notes/:id',
+    auth: 'session',
+    group: 'notes',
+    summary: 'Edit the text or tick / untick; only the keys sent are touched',
+    alias: true,
+    params: 'id',
+    body: '{ text?, done? }',
+    returns: '{ note }',
+  },
+  {
+    method: 'DELETE',
+    path: '/api/notes/:id',
+    auth: 'session',
+    group: 'notes',
+    summary: 'Delete a checklist line',
+    params: 'id',
+    returns: '{ ok, deletedId }',
   },
 
   // ---- customers ----------------------------------------------------------
@@ -462,6 +633,62 @@ export const ENDPOINTS: EndpointDef[] = [
   },
   {
     method: 'GET',
+    path: '/api/admin/businesses?q=&owner=&page=&limit=',
+    auth: 'admin',
+    group: 'admin',
+    summary: 'Every book (ব্যবসা) across all accounts, with per-book tallies',
+    params: 'q, owner, page, limit',
+    returns: '{ items, total, page, pages }',
+  },
+  {
+    method: 'PATCH',
+    path: '/api/admin/businesses/:id',
+    auth: 'admin',
+    group: 'admin',
+    summary: "Rename any account's book, or promote it to primary",
+    params: 'id',
+    body: '{ name?, isPrimary? }',
+    returns: '{ ok, business }',
+  },
+  {
+    method: 'DELETE',
+    path: '/api/admin/businesses/:id',
+    auth: 'admin',
+    group: 'admin',
+    summary: 'Delete any book and cascade its contents (refuses the last one)',
+    params: 'id',
+    returns: '{ ok, deletedId, removed }',
+  },
+  {
+    method: 'GET',
+    path: '/api/admin/stock?q=&owner=&page=&limit=',
+    auth: 'admin',
+    group: 'admin',
+    summary: 'Every stock item across all accounts, with derived quantities',
+    params: 'q, owner, page, limit',
+    returns: '{ items, total, page, pages }',
+  },
+  {
+    method: 'PATCH',
+    path: '/api/admin/stock/:id',
+    auth: 'admin',
+    group: 'admin',
+    summary: "Edit any account's stock item; only the keys sent are touched",
+    params: 'id',
+    body: '{ name?, unit?, purchasePrice?, salePrice?, openingStock?, lowStockThreshold?, note? }',
+    returns: '{ item }',
+  },
+  {
+    method: 'DELETE',
+    path: '/api/admin/stock/:id',
+    auth: 'admin',
+    group: 'admin',
+    summary: 'Delete any stock item, its movements and its Cloudinary photo',
+    params: 'id',
+    returns: '{ ok, deletedId, removed }',
+  },
+  {
+    method: 'GET',
     path: '/api/admin/endpoints',
     auth: 'admin',
     group: 'admin',
@@ -475,6 +702,9 @@ export const GROUP_LABELS: Record<EndpointDef['group'], string> = {
   auth: 'Authentication',
   uploads: 'Image uploads',
   app: 'App shell',
+  businesses: 'Businesses (মাল্টি ব্যবসা)',
+  stock: 'Stock (স্টক হিসাব)',
+  notes: 'Notes (ব্যবসার নোট)',
   customers: 'Customers & ledger',
   cashbox: 'Cash box',
   admin: 'Superadmin',

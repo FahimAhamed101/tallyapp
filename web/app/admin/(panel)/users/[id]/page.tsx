@@ -147,6 +147,12 @@ export default function UserDetailPage() {
               {counts.customers} কাস্টমার · {counts.transactions} লেনদেন · {counts.cashbox}{' '}
               ক্যাশ এন্ট্রি
             </dd>
+            <dt>ব্যবসা</dt>
+            <dd>
+              <Link href={`/admin/businesses?owner=${user.id}`} className="btn-link">
+                {counts.businesses} টি ব্যবসা
+              </Link>
+            </dd>
           </dl>
         </div>
       </div>

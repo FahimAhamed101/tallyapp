@@ -44,19 +44,34 @@ private data class Service(
     val color: Color,
     val shadow: Color,
     val label: String,
+    /**
+     * Set only on tiles that are actually wired up. The rest of the grid is
+     * decorative, exactly as in the reference app, so tapping them does nothing
+     * rather than opening a blank screen.
+     */
+    val key: String? = null,
 )
 
 /** The 2x4 service grid, in the reference app's order. */
 private val services = listOf(
-    Service(TallyIcons.Book, TallyColors.GlyphGreen, TallyColors.ShadowGreen, "মাল্টি ব্যবসা"),
-    Service(TallyIcons.Box, TallyColors.GlyphRed, TallyColors.ShadowRed, "স্টক হিসাব"),
-    Service(TallyIcons.Note, TallyColors.GlyphOrange, TallyColors.ShadowOrange, "ব্যবসার নোট"),
+    Service(TallyIcons.Book, TallyColors.GlyphGreen, TallyColors.ShadowGreen, "মাল্টি ব্যবসা", key = SERVICE_BUSINESSES),
+    Service(TallyIcons.Box, TallyColors.GlyphRed, TallyColors.ShadowRed, "স্টক হিসাব", key = SERVICE_STOCK),
+    Service(TallyIcons.Note, TallyColors.GlyphOrange, TallyColors.ShadowOrange, "ব্যবসার নোট", key = SERVICE_NOTES),
     Service(TallyIcons.Bell, TallyColors.GlyphGreen, TallyColors.ShadowGreen, "গ্রুপ তাগাদা"),
     Service(TallyIcons.Qr, TallyColors.GlyphRed, TallyColors.ShadowRed, "QR কোড"),
     Service(TallyIcons.Cloud, TallyColors.GlyphGreen, TallyColors.ShadowGreen, "ডাটা ব্যাকআপ"),
     Service(TallyIcons.Chat, TallyColors.GlyphRed, TallyColors.ShadowRed, "টালি-মেসেজ"),
     Service(TallyIcons.Envelope, TallyColors.GlyphOrange, TallyColors.ShadowOrange, "ক্যাশবক্স"),
 )
+
+/** Key for the মাল্টি ব্যবসা tile — opens the book switcher sheet. */
+const val SERVICE_BUSINESSES = "businesses"
+
+/** Key for the স্টক হিসাব tile — opens the product list. */
+const val SERVICE_STOCK = "stock"
+
+/** Key for the ব্যবসার নোট tile — opens checklist notes. */
+const val SERVICE_NOTES = "notes"
 
 /**
  * টালি tab. Vertical rhythm taken from the reference app's uiautomator dump
@@ -70,6 +85,9 @@ fun HomeScreen(
     onCustomerClick: (CustomerItem) -> Unit,
     onAddCustomer: () -> Unit,
     onEditCustomer: (CustomerItem) -> Unit,
+    onOpenBusinesses: () -> Unit,
+    onOpenStock: () -> Unit,
+    onOpenNotes: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val profile = store.profile
@@ -89,10 +107,18 @@ fun HomeScreen(
         ) {
             Column {
                 GoldHeader(
-                    businessName = profile?.name ?: "…",
+                    // The book you are in, not the account holder.
+                    businessName = store.toolbarName,
                     inboxBadge = profile?.inboxUnread ?: 0,
+                    onBusinessClick = onOpenBusinesses,
                 )
-                ServicesCard()
+                ServicesCard(onServiceClick = { key ->
+                    when (key) {
+                        SERVICE_BUSINESSES -> onOpenBusinesses()
+                        SERVICE_STOCK -> onOpenStock()
+                        SERVICE_NOTES -> onOpenNotes()
+                    }
+                })
             }
         }
 
@@ -103,16 +129,13 @@ fun HomeScreen(
             payable = summary?.payableDisplay ?: "০.০০",
         )
         SearchRow()
-        ListHeaderRow(summary?.customerLabel ?: "")
+        ListHeaderRow(summary?.customerLabel ?: "", isEmpty = store.customers.isEmpty())
 
         Box(Modifier.weight(1f)) {
             when {
                 store.loading && store.customers.isEmpty() -> LoadingBox(Modifier.fillMaxSize())
 
-                store.customers.isEmpty() -> EmptyBox(
-                    label = "এখনো কোনো কাস্টমার যোগ করা হয়নি",
-                    modifier = Modifier.fillMaxSize(),
-                )
+                store.customers.isEmpty() -> EmptyCustomerIllustration()
 
                 else -> Column(
                     Modifier
@@ -148,7 +171,7 @@ fun HomeScreen(
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun ServicesCard() {
+private fun ServicesCard(onServiceClick: (String) -> Unit) {
     Column(
         Modifier
             .fillMaxWidth()
@@ -159,7 +182,11 @@ private fun ServicesCard() {
         services.chunked(4).forEach { rowItems ->
             Row(Modifier.fillMaxWidth()) {
                 rowItems.forEach { service ->
-                    ServiceCell(service, Modifier.weight(1f))
+                    ServiceCell(
+                        service = service,
+                        modifier = Modifier.weight(1f),
+                        onClick = service.key?.let { key -> { onServiceClick(key) } },
+                    )
                 }
             }
         }
@@ -167,9 +194,11 @@ private fun ServicesCard() {
 }
 
 @Composable
-private fun ServiceCell(service: Service, modifier: Modifier) {
+private fun ServiceCell(service: Service, modifier: Modifier, onClick: (() -> Unit)? = null) {
     Column(
-        modifier = modifier.padding(top = 8.dp, bottom = 6.dp),
+        modifier = modifier
+            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
+            .padding(top = 8.dp, bottom = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         SoftIcon(
@@ -295,7 +324,7 @@ private fun CircleIconButton(paths: List<String>) {
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun ListHeaderRow(customerLabel: String) {
+private fun ListHeaderRow(customerLabel: String, isEmpty: Boolean = false) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -303,13 +332,69 @@ private fun ListHeaderRow(customerLabel: String) {
             .padding(start = 12.dp, end = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(customerLabel, fontSize = 13.sp, color = TallyColors.TextBody, maxLines = 1)
-        Spacer(Modifier.weight(1f))
-        Text("পাবো", fontSize = 13.sp, color = TallyColors.PaboRed, maxLines = 1)
-        Text(" / ", fontSize = 13.sp, color = TallyColors.TextHint, maxLines = 1)
-        Text("দেবো", fontSize = 13.sp, color = TallyColors.DeboGreen, maxLines = 1)
+        val label = if (isEmpty) "কাস্টমার ০ / সাপ্লায়ার ০" else customerLabel
+        Text(label, fontSize = 13.sp, color = TallyColors.TextBody, maxLines = 1)
+        if (!isEmpty) {
+            Spacer(Modifier.weight(1f))
+            Text("পাবো", fontSize = 13.sp, color = TallyColors.PaboRed, maxLines = 1)
+            Text(" / ", fontSize = 13.sp, color = TallyColors.TextHint, maxLines = 1)
+            Text("দেবো", fontSize = 13.sp, color = TallyColors.DeboGreen, maxLines = 1)
+        }
     }
     Spacer(Modifier.height(6.5.dp))
+}
+
+@Composable
+private fun EmptyCustomerIllustration() {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(bottom = 60.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Box(
+            Modifier
+                .size(136.dp)
+                .clip(CircleShape)
+                .background(Color(0xFFF3F4F6)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                Box(
+                    Modifier
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF059669)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    LineIcon(TallyIcons.Check, Color.White, 13.dp, strokeWidth = 2.4f)
+                }
+                Spacer(Modifier.width(10.dp))
+                LineIcon(TallyIcons.Person, Color(0xFFD97706), 52.dp, strokeWidth = 1.6f)
+                Spacer(Modifier.width(10.dp))
+                Box(
+                    Modifier
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFEA580C)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    LineIcon(TallyIcons.Book, Color.White, 13.dp, strokeWidth = 1.8f)
+                }
+            }
+        }
+        Spacer(Modifier.height(18.dp))
+        Text(
+            text = "ব্যবহার শুরু করতে কাস্টমার/সাপ্লায়ার যোগ করুন।",
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Medium,
+            color = Color(0xFF1F2937),
+        )
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)

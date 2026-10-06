@@ -9,9 +9,11 @@ import { useAdminLogoutMutation } from '@/store/authApi';
 const NAV: { href: string; label: string; icon: string; exact?: boolean }[] = [
   { href: '/admin', label: 'ড্যাশবোর্ড', icon: '▦', exact: true },
   { href: '/admin/users', label: 'ব্যবহারকারী', icon: '☰' },
+  { href: '/admin/businesses', label: 'ব্যবসা সমূহ', icon: '⌂' },
   { href: '/admin/customers', label: 'কাস্টমার ও সাপ্লায়ার', icon: '◍' },
   { href: '/admin/transactions', label: 'লেনদেন', icon: '⇄' },
   { href: '/admin/cashbox', label: 'ক্যাশবক্স', icon: '▤' },
+  { href: '/admin/stock', label: 'স্টক হিসাব', icon: '▣' },
   { href: '/admin/endpoints', label: 'API এন্ডপয়েন্ট', icon: '{}' },
 ];
 

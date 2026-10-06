@@ -22,15 +22,13 @@ const AUTH_CHIP: Record<string, string> = {
   admin: 'gold',
 };
 
-const GROUP_ORDER: EndpointDef['group'][] = [
-  'system',
-  'auth',
-  'uploads',
-  'app',
-  'customers',
-  'cashbox',
-  'admin',
-];
+/**
+ * Display order comes from `GROUP_LABELS`, which is typed as a full
+ * `Record<EndpointDef['group'], string>`. Adding a route group to the catalogue
+ * therefore fails to compile until it is labelled — and it can never be
+ * silently dropped from this page the way a hand-maintained list would be.
+ */
+const GROUP_ORDER = Object.keys(GROUP_LABELS) as EndpointDef['group'][];
 
 export default function EndpointsPage() {
   const groups = GROUP_ORDER.map((key) => ({

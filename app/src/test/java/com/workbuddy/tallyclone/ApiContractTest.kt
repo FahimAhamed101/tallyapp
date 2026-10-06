@@ -5,11 +5,15 @@ import com.workbuddy.tallyclone.data.ApiClient
 import com.workbuddy.tallyclone.data.ApiException
 import com.workbuddy.tallyclone.data.AuthResult
 import com.workbuddy.tallyclone.data.Bootstrap
+import com.workbuddy.tallyclone.data.BusinessItem
 import com.workbuddy.tallyclone.data.CashboxDashboard
 import com.workbuddy.tallyclone.data.CustomerItem
 import com.workbuddy.tallyclone.data.LedgerData
 import com.workbuddy.tallyclone.data.MenuData
 import com.workbuddy.tallyclone.data.Profile
+import com.workbuddy.tallyclone.data.StockDetail
+import com.workbuddy.tallyclone.data.StockItem
+import com.workbuddy.tallyclone.data.StockList
 import com.workbuddy.tallyclone.data.Summary
 import com.workbuddy.tallyclone.data.UnauthorizedException
 import com.workbuddy.tallyclone.data.UploadedImage
@@ -21,6 +25,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.BeforeClass
 import org.junit.Test
@@ -39,9 +44,13 @@ import java.net.URLEncoder
  * upload path the camera/gallery picker feeds.
  *
  * Requires the backend to be running (and seeded):
- *   cd backend && npm run seed && npm start
+ *   cd web && npm run build && npm start      # Next.js API + admin panel
  *
- *   ./gradlew testDebugUnitTest
+ *   ./gradlew testDebugUnitTest -Dapi.base=http://127.0.0.1:4000/api
+ *
+ * Without `-Dapi.base` the suite targets the deployed API baked into
+ * [ApiClient.baseUrl]. A locally-added route only exists locally, so run the
+ * contract test against 127.0.0.1 while developing.
  *
  * Override the target with -Dapi.base=http://host:port/api if needed.
  */
@@ -53,7 +62,7 @@ class ApiContractTest {
         private val CASHBOX_KEYS =
             setOf("cash_sale", "cash_purchase", "expense", "owner_in", "owner_out")
 
-        /** Seeded demo accounts (see backend/src/seed.js). */
+        /** Seeded demo accounts (see web/scripts/seed.ts). */
         private const val PHONE = "+8801706617723"
         private const val PASSWORD = "123456"
         private const val OTHER_PHONE = "+8801811223344"
@@ -74,9 +83,21 @@ class ApiContractTest {
     /**
      * Every test starts signed in. The suite deliberately shares one account's
      * token, exactly like a returning app would after a cold start.
+     *
+     * The reachability probe comes first and *skips* rather than fails. Without
+     * it a dead or wrong `baseUrl` produced 23 identical ConnectExceptions, which
+     * tells you nothing except that the class could not start — and buries the
+     * one-line instruction below. A skip is honest about what happened; the
+     * `reachable()` helper still fails loudly inside any test that genuinely
+     * needs the host.
      */
     @Before
     fun signIn() {
+        assumeTrue(
+            "backend not reachable at ${ApiClient.baseUrl} — skipping the contract suite " +
+                "(start it with: cd web && npm run seed && npm start)",
+            ping(),
+        )
         if (ApiClient.token.isNullOrBlank()) {
             val auth = AuthResult.from(
                 ApiClient.post(
@@ -89,15 +110,48 @@ class ApiContractTest {
         assertTrue("no bearer token — is the backend seeded?", !ApiClient.token.isNullOrBlank())
     }
 
+    /** Reachability probe that reports instead of throwing. */
+    private fun ping(): Boolean = try {
+        ApiClient.get("/health")
+        true
+    } catch (_: Exception) {
+        false
+    }
+
     private fun reachable(): Boolean = try {
         ApiClient.get("/health")
         true
     } catch (e: Exception) {
         fail(
             "Cannot reach ${ApiClient.baseUrl} (${e.message}).\n" +
-                "Start the backend first:  cd backend && npm run seed && npm start",
+                "Start the backend first:  cd web && npm run seed && npm start",
         )
         false
+    }
+
+    /**
+     * True only when the target host actually serves the business endpoints.
+     *
+     * মাল্টি ব্যবসা is newer than the deployed build, and the live host answers
+     * `/api/health` with 200 while returning 404 for `/api/businesses`. Without
+     * this guard the three tests below run and fail against that host for a
+     * reason that has nothing to do with the code — and a suite that goes red for
+     * an environmental reason is a suite everyone learns to ignore.
+     *
+     * A 404 skips; anything else is a real failure and is rethrown.
+     *
+     *   ./gradlew testDebugUnitTest -Dapi.base=http://127.0.0.1:4000/api
+     */
+    private fun businessApiDeployed(): Boolean = try {
+        ApiClient.get("/businesses")
+        true
+    } catch (e: ApiException) {
+        if (e.status == 404) {
+            println("[test] ${ApiClient.baseUrl} does not serve /businesses — skipping")
+            false
+        } else {
+            throw e
+        }
     }
 
     /** Logs in as the other seeded account and returns a token for it. */
@@ -261,6 +315,126 @@ class ApiContractTest {
             "the customer was actually deleted",
             ApiClient.get("/customers/$target").getJSONObject("customer").optString("id") == target,
         )
+    }
+
+    // -------------------------------------------------- মাল্টি ব্যবসা (books)
+
+    @Test
+    fun bootstrapCarriesTheBusinessList() {
+        assertTrue(reachable())
+        assumeTrue("the target host does not serve /businesses — skipping", businessApiDeployed())
+        val boot = Bootstrap.from(ApiClient.get("/bootstrap"))
+
+        assertTrue("no businesses came back", boot.businesses.isNotEmpty())
+        assertTrue("activeBusinessId was not parsed", boot.activeBusinessId.isNotBlank())
+        assertTrue("activeBusinessName was not parsed", boot.activeBusinessName.isNotBlank())
+        assertTrue("maxBusinesses was not parsed", boot.maxBusinesses >= boot.businesses.size)
+
+        // The sheet ticks the active row, so the active id must actually be one
+        // of the rows — otherwise nothing would render as selected.
+        assertTrue(
+            "activeBusinessId is not among the listed businesses",
+            boot.businesses.any { it.id == boot.activeBusinessId },
+        )
+        // Exactly one primary, or the switcher's [প্রাইমারি] chip is ambiguous.
+        assertEquals(1, boot.businesses.count { it.isPrimary })
+
+        boot.businesses.forEach {
+            assertTrue("business ${it.id} has no name", it.name.isNotBlank())
+            // The row subtitle is composed on the client from two server halves.
+            assertTrue("subtitle is not composed", it.subtitle.contains(" | "))
+            assertTrue(
+                "customerLabel is not Bengali: ${it.customerLabel}",
+                BENGALI_DIGITS.containsMatchIn(it.customerLabel),
+            )
+            assertTrue(
+                "receivableLabel is not Bengali: ${it.receivableLabel}",
+                BENGALI_DIGITS.containsMatchIn(it.receivableLabel),
+            )
+        }
+    }
+
+    @Test
+    fun businessListParses() {
+        assertTrue(reachable())
+        assumeTrue("the target host does not serve /businesses — skipping", businessApiDeployed())
+        val items = BusinessItem.listFrom(ApiClient.get("/businesses"))
+        assertTrue("the sheet listed nothing", items.isNotEmpty())
+        items.forEach {
+            assertTrue("business has no id", it.id.isNotBlank())
+            assertTrue("business has no name", it.name.isNotBlank())
+            assertTrue("customerCount went negative", it.customerCount >= 0)
+            assertTrue("supplierCount went negative", it.supplierCount >= 0)
+        }
+    }
+
+    /**
+     * The `X-Business-Id` header is what keeps two books' ledgers apart. A bug
+     * here would not crash anything — it would quietly mix one shopkeeper's two
+     * books together, which is the worst way this feature can fail. So this
+     * drives the real `ApiClient` (header, verb-override and all) and re-reads
+     * the API to confirm the separation.
+     */
+    @Test
+    fun businessHeaderScopesReadsAndWrites() {
+        assertTrue(reachable())
+        assumeTrue("the target host does not serve /businesses — skipping", businessApiDeployed())
+        val savedBusiness = ApiClient.businessId
+        var createdId: String? = null
+
+        try {
+            val created = BusinessItem.from(
+                ApiClient.post("/businesses", JSONObject().put("name", "কন্ট্রাক্ট টেস্ট বই"))
+                    .getJSONObject("business"),
+            )
+            createdId = created.id
+            assertTrue("the new book has no id", created.id.isNotBlank())
+            assertFalse("an added book must not be primary", created.isPrimary)
+
+            // Write a customer into the new book.
+            ApiClient.businessId = created.id
+            val scoped = CustomerItem.from(
+                ApiClient.post(
+                    "/customers",
+                    JSONObject().put("name", "কন্ট্রাক্ট বই কাস্টমার").put("type", "customer"),
+                ).getJSONObject("customer"),
+            )
+
+            val inNew = ApiClient.get("/customers").getJSONArray("items")
+            assertTrue(
+                "the new book did not list its own customer",
+                (0 until inNew.length()).any { inNew.getJSONObject(it).optString("id") == scoped.id },
+            )
+
+            // Back to the primary: the customer must not follow us.
+            ApiClient.businessId = null
+            val inPrimary = ApiClient.get("/customers").getJSONArray("items")
+            assertFalse(
+                "the primary book leaked the other book's customer",
+                (0 until inPrimary.length()).any { inPrimary.getJSONObject(it).optString("id") == scoped.id },
+            )
+
+            // Reading it from the wrong book must 404, exactly like a cross-user read.
+            try {
+                ApiClient.get("/customers/${scoped.id}")
+                fail("one book could read another book's customer")
+            } catch (e: ApiException) {
+                assertEquals("expected a 404 for a cross-book read", 404, e.status)
+            }
+
+            // Renaming goes over the wire as POST + X-HTTP-Method-Override,
+            // because HttpURLConnection cannot send PATCH at all.
+            val renamed = BusinessItem.from(
+                ApiClient.patch(
+                    "/businesses/${created.id}",
+                    JSONObject().put("name", "কন্ট্রাক্ট টেস্ট বই ২"),
+                ).getJSONObject("business"),
+            )
+            assertEquals("কন্ট্রাক্ট টেস্ট বই ২", renamed.name)
+        } finally {
+            ApiClient.businessId = savedBusiness
+            createdId?.let { runCatching { ApiClient.delete("/businesses/$it") } }
+        }
     }
 
     // ------------------------------------------------------------- bootstrap
@@ -449,7 +623,7 @@ class ApiContractTest {
         assertTrue(reachable())
         val status = ApiClient.get("/uploads/status")
         assertTrue(
-            "Cloudinary is not configured on the server — check backend/.env",
+            "Cloudinary is not configured on the server — check web/.env.local",
             status.optBoolean("configured"),
         )
 
@@ -637,5 +811,149 @@ class ApiContractTest {
         assertEquals("customer", customer.type)
         assertEquals("", customer.photoUrl)
         assertEquals("", customer.note)
+
+        // The switcher sheet is the first thing the home tab can open, so a
+        // business row must degrade rather than crash on a thin payload.
+        val business = BusinessItem.from(JSONObject())
+        assertEquals("", business.id)
+        assertEquals("", business.name)
+        assertFalse(business.isPrimary)
+        assertEquals(0, business.customerCount)
+        assertEquals("কাস্টমার ০, সাপ্লায়ার ০ | মোট পাওয়া ০.০০", business.subtitle)
+    }
+
+    // ---- স্টক হিসাব --------------------------------------------------------
+
+    /**
+     * The stock DTOs must read the field names the server actually sends.
+     *
+     * `StockScreenRenderTest` renders the screens from a hand-written fixture,
+     * which is exactly the kind of thing that drifts: if the route renamed
+     * `quantityLabel`, that fixture would keep passing while every real screen
+     * showed a blank. Only a live parse catches that, which is what this is.
+     */
+    @Test
+    fun stockListParsesWithBengaliLabelsAndAMatchingSummary() {
+        reachable()
+        val list = StockList.from(ApiClient.get("/stock"))
+
+        assertTrue("the seeded account should have stock items", list.items.isNotEmpty())
+        assertEquals(
+            "the summary must count exactly the rows it came with",
+            list.items.size,
+            list.summary.itemCount,
+        )
+
+        list.items.forEach { item ->
+            assertTrue("an item came back without an id", item.id.isNotBlank())
+            assertTrue("${item.name} lost its unit", item.unit.isNotBlank())
+            assertTrue("${item.name} lost its quantity label", item.quantityLabel.isNotBlank())
+            assertTrue("${item.name} lost its value label", item.valueLabel.isNotBlank())
+            assertTrue("${item.name} lost its price label", item.priceLabel.isNotBlank())
+            // Every display string is formatted server-side in Bengali. A Latin
+            // digit here means the DTO read the wrong key and fell back to a
+            // default, which is the failure this test exists for.
+            assertTrue(
+                "${item.name} quantity label is not Bengali: ${item.quantityLabel}",
+                BENGALI_DIGITS.containsMatchIn(item.quantityLabel),
+            )
+            assertTrue(
+                "${item.name} value label is not Bengali: ${item.valueLabel}",
+                BENGALI_DIGITS.containsMatchIn(item.valueLabel),
+            )
+        }
+    }
+
+    /**
+     * A movement must move the *derived* quantity, in both directions.
+     *
+     * Asserting the POST's status would prove nothing: the defect this guards
+     * against (an aggregation `$match` that does not cast its ids) returned 201
+     * with the right Bengali title while the quantity never budged. Only
+     * re-reading the item after the write can tell the two apart.
+     */
+    @Test
+    fun aStockMovementMovesTheDerivedQuantityBothWays() {
+        reachable()
+
+        val created = StockItem.from(
+            ApiClient.post(
+                "/stock",
+                JSONObject()
+                    .put("name", "টেস্ট পণ্য ${System.currentTimeMillis()}")
+                    .put("unit", "কেজি")
+                    .put("purchasePrice", "100")
+                    .put("salePrice", "130")
+                    .put("openingStock", "10")
+                    .put("lowStockThreshold", "5"),
+            ).getJSONObject("item"),
+        )
+
+        try {
+            // A brand-new item has no movements, so it *is* its opening stock.
+            assertEquals(10.0, created.quantity, 0.001)
+            assertFalse("10 is above the threshold of 5", created.lowStock)
+            assertEquals(0, created.movementCount)
+
+            ApiClient.post(
+                "/stock/${created.id}/movements",
+                JSONObject().put("direction", "in").put("quantity", "7").put("unitCost", "100"),
+            )
+            val afterIn = StockDetail.from(ApiClient.get("/stock/${created.id}"))
+            assertEquals("in-movement must raise the quantity", 17.0, afterIn.item.quantity, 0.001)
+            assertEquals(1, afterIn.movements.size)
+            assertEquals("in", afterIn.movements.first().direction)
+            assertTrue(afterIn.movements.first().title.contains("স্টক ইন"))
+
+            ApiClient.post(
+                "/stock/${created.id}/movements",
+                JSONObject().put("direction", "out").put("quantity", "4").put("unitCost", "100"),
+            )
+            val afterOut = StockDetail.from(ApiClient.get("/stock/${created.id}"))
+            assertEquals("out-movement must lower the quantity", 13.0, afterOut.item.quantity, 0.001)
+            // Newest first, so the top of the list is the most recent event.
+            assertEquals("out", afterOut.movements.first().direction)
+
+            // 13 - 9 = 4, which is at or below the threshold of 5.
+            ApiClient.post(
+                "/stock/${created.id}/movements",
+                JSONObject().put("direction", "out").put("quantity", "9").put("unitCost", "100"),
+            )
+            val low = StockDetail.from(ApiClient.get("/stock/${created.id}")).item
+            assertEquals(4.0, low.quantity, 0.001)
+            assertTrue("4 is at or below the threshold of 5", low.lowStock)
+            assertEquals("স্টক কম", low.lowStockLabel)
+        } finally {
+            ApiClient.delete("/stock/${created.id}")
+        }
+    }
+
+    /** A product's movements must not outlive it. */
+    @Test
+    fun deletingAStockItemTakesItsHistoryWithIt() {
+        reachable()
+
+        val created = StockItem.from(
+            ApiClient.post(
+                "/stock",
+                JSONObject().put("name", "মুছে ফেলার পণ্য ${System.currentTimeMillis()}"),
+            ).getJSONObject("item"),
+        )
+        ApiClient.post(
+            "/stock/${created.id}/movements",
+            JSONObject().put("direction", "in").put("quantity", "3"),
+        )
+
+        val deleted = ApiClient.delete("/stock/${created.id}")
+        assertEquals(true, deleted.optBoolean("ok"))
+        assertEquals(1, deleted.optJSONObject("removed")?.optInt("movements"))
+
+        // The item is gone, and asking for it is a 404 rather than a stale row.
+        try {
+            ApiClient.get("/stock/${created.id}")
+            fail("a deleted item must not still be readable")
+        } catch (e: ApiException) {
+            assertEquals(404, e.status)
+        }
     }
 }

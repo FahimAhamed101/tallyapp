@@ -33,7 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.workbuddy.tallyclone.data.AppStore
+import com.workbuddy.tallyclone.data.MenuData
 import com.workbuddy.tallyclone.data.MenuEntryItem
 import com.workbuddy.tallyclone.data.MenuSectionData
 import com.workbuddy.tallyclone.data.Profile
@@ -41,17 +41,21 @@ import com.workbuddy.tallyclone.data.Profile
 /**
  * The মেন্যু tab: a right-hand navigation drawer drawn over the current tab.
  * Section counts come from the API so the menu reflects real data.
+ *
+ * It takes the two slices it draws rather than the whole [AppStore], so it stays
+ * a pure renderer like every other screen — and so a test can hand it a menu and
+ * press a row without a backend. That matters here more than usual: the row that
+ * opens সেটিংস looked identical whether it was wired or not, so the only way to
+ * tell is to press it.
  */
 @Composable
 fun MenuDrawer(
-    store: AppStore,
+    menu: MenuData?,
+    profile: Profile?,
     onDismiss: () -> Unit,
     onLogout: () -> Unit,
     onItemClick: (MenuEntryItem) -> Unit,
 ) {
-    val profile = store.profile
-    val menu = store.menu
-
     Box(Modifier.fillMaxSize()) {
         // Scrim over the tab underneath.
         Box(

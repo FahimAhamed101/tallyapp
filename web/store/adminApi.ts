@@ -1,7 +1,9 @@
 import {
   api,
+  type AdminBusiness,
   type AdminCashboxEntry,
   type AdminCustomer,
+  type AdminStockItem,
   type AdminTransaction,
   type AdminUser,
   type Paginated,
@@ -13,6 +15,13 @@ import {
 export interface UserListArgs {
   q?: string;
   role?: 'user' | 'admin' | '';
+  page?: number;
+  limit?: number;
+}
+
+export interface BusinessListArgs {
+  q?: string;
+  owner?: string;
   page?: number;
   limit?: number;
 }
@@ -38,6 +47,13 @@ export interface TransactionListArgs {
 export interface CashboxListArgs {
   q?: string;
   kind?: string;
+  owner?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface StockListArgs {
+  q?: string;
   owner?: string;
   page?: number;
   limit?: number;
@@ -103,6 +119,98 @@ export const adminApi = api.injectEndpoints({
         { type: 'Customer', id: 'LIST' },
         { type: 'Transaction', id: 'LIST' },
         { type: 'Cashbox', id: 'LIST' },
+        'Stats',
+      ],
+    }),
+
+    // ---- businesses (মাল্টি ব্যবসা) --------------------------------------
+    businesses: build.query<Paginated<AdminBusiness>, BusinessListArgs | void>({
+      query: (args) => `/admin/businesses${qs((args || {}) as Record<string, unknown>)}`,
+      providesTags: (result) =>
+        result
+          ? [
+              ...result.items.map((b) => ({ type: 'Business' as const, id: b.id })),
+              { type: 'Business' as const, id: 'LIST' },
+            ]
+          : [{ type: 'Business' as const, id: 'LIST' }],
+    }),
+
+    updateBusiness: build.mutation<
+      { ok: boolean; business: AdminBusiness },
+      { id: string; patch: { name?: string; isPrimary?: boolean } }
+    >({
+      query: ({ id, patch }) => ({ url: `/admin/businesses/${id}`, method: 'PATCH', body: patch }),
+      invalidatesTags: (_r, _e, { id }) => [
+        { type: 'Business', id },
+        { type: 'Business', id: 'LIST' },
+        // Promoting one book demotes another, so the whole list is stale.
+        'Stats',
+      ],
+    }),
+
+    deleteBusiness: build.mutation<
+      {
+        ok: boolean;
+        deletedId: string;
+        removed: { customers: number; transactions: number; cashboxEntries: number };
+      },
+      string
+    >({
+      query: (id) => ({ url: `/admin/businesses/${id}`, method: 'DELETE' }),
+      // Deleting a book takes its customers, ledger and cash box with it, so
+      // every one of those lists is stale afterwards — not just this one.
+      invalidatesTags: [
+        { type: 'Business', id: 'LIST' },
+        { type: 'Customer', id: 'LIST' },
+        { type: 'Transaction', id: 'LIST' },
+        { type: 'Cashbox', id: 'LIST' },
+        'Stats',
+      ],
+    }),
+
+    // ---- stock (স্টক হিসাব) ----------------------------------------------
+    stock: build.query<Paginated<AdminStockItem>, StockListArgs | void>({
+      query: (args) => `/admin/stock${qs((args || {}) as Record<string, unknown>)}`,
+      providesTags: (result) =>
+        result
+          ? [
+              ...result.items.map((s) => ({ type: 'Stock' as const, id: s.id })),
+              { type: 'Stock' as const, id: 'LIST' },
+            ]
+          : [{ type: 'Stock' as const, id: 'LIST' }],
+    }),
+
+    updateStock: build.mutation<
+      { item: AdminStockItem },
+      {
+        id: string;
+        patch: {
+          name?: string;
+          unit?: string;
+          purchasePrice?: number;
+          salePrice?: number;
+          openingStock?: number;
+          lowStockThreshold?: number;
+          note?: string;
+        };
+      }
+    >({
+      query: ({ id, patch }) => ({ url: `/admin/stock/${id}`, method: 'PATCH', body: patch }),
+      // Opening stock and the threshold both feed the derived quantity, so the
+      // row has to be refetched rather than patched in place.
+      invalidatesTags: (_r, _e, { id }) => [
+        { type: 'Stock', id },
+        { type: 'Stock', id: 'LIST' },
+      ],
+    }),
+
+    deleteStock: build.mutation<
+      { ok: boolean; deletedId: string; removed: { movements: number } },
+      string
+    >({
+      query: (id) => ({ url: `/admin/stock/${id}`, method: 'DELETE' }),
+      invalidatesTags: [
+        { type: 'Stock', id: 'LIST' },
         'Stats',
       ],
     }),
@@ -258,7 +366,7 @@ export interface AdminUserDetail {
     customerLabel: string;
     transactionCount: number;
   };
-  counts: { customers: number; transactions: number; cashbox: number };
+  counts: { businesses: number; customers: number; transactions: number; cashbox: number };
   recentTransactions: {
     id: string;
     kind: string;
@@ -294,6 +402,12 @@ export const {
   useUserQuery,
   useUpdateUserMutation,
   useDeleteUserMutation,
+  useBusinessesQuery,
+  useUpdateBusinessMutation,
+  useDeleteBusinessMutation,
+  useStockQuery,
+  useUpdateStockMutation,
+  useDeleteStockMutation,
   useCustomersQuery,
   useCustomerQuery,
   useUpdateCustomerMutation,

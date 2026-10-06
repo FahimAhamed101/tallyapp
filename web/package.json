@@ -13,7 +13,12 @@
     "smoke": "tsx scripts/smoke.ts",
     "upload-check": "tsx scripts/upload-check.ts",
     "api-coverage": "tsx scripts/api-coverage.ts",
-    "assertion-sanity": "tsx .smoke/assertion-sanity.ts"
+    "assertion-sanity": "tsx .smoke/assertion-sanity.ts",
+    "consistency": "node .smoke/receivable-consistency.mjs",
+    "unit-scope": "tsx .smoke/unit-scope.ts",
+    "browser-check": "node .smoke/browser-check.mjs",
+    "verify": "npm run typecheck && npm run smoke && npm run api-coverage && npm run upload-check && npm run assertion-sanity && npm run consistency && npm run unit-scope",
+    "seed:stock": "tsx scripts/seed-stock.ts"
   },
   "dependencies": {
     "@reduxjs/toolkit": "^2.2.7",

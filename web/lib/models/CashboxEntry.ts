@@ -7,6 +7,8 @@ import mongoose, { Schema, model, Types, type InferSchemaType, type Model } from
 const CashboxEntrySchema = new Schema(
   {
     owner: { type: Types.ObjectId, ref: 'User', required: true, index: true },
+    /** The book this movement belongs to; nullable until adopted. */
+    business: { type: Types.ObjectId, ref: 'Business', default: null, index: true },
     kind: {
       type: String,
       required: true,

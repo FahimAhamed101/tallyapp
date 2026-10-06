@@ -1,13 +1,19 @@
 import mongoose, { Schema, model, Types, type InferSchemaType, type Model } from 'mongoose';
 
 /**
- * A customer or supplier, owned by exactly one user. Balances are NOT stored
- * here — they are derived from the transaction ledger so the numbers can never
- * drift out of sync.
+ * A customer or supplier, owned by exactly one user, inside exactly one of that
+ * user's businesses. Balances are NOT stored here — they are derived from the
+ * transaction ledger so the numbers can never drift out of sync.
  */
 const CustomerSchema = new Schema(
   {
     owner: { type: Types.ObjectId, ref: 'User', required: true, index: true },
+    /**
+     * Which book this belongs to. Nullable on purpose: documents created before
+     * multi-business support are adopted by the account's primary business on
+     * first read (see `ensurePrimaryBusiness`), so no migration step is needed.
+     */
+    business: { type: Types.ObjectId, ref: 'Business', default: null, index: true },
     name: { type: String, required: true, trim: true },
     phone: { type: String, default: '', trim: true },
     type: { type: String, enum: ['customer', 'supplier'], default: 'customer' },
@@ -26,6 +32,7 @@ const CustomerSchema = new Schema(
 
 CustomerSchema.index({ owner: 1, name: 1 });
 CustomerSchema.index({ owner: 1, phone: 1 });
+CustomerSchema.index({ owner: 1, business: 1, name: 1 });
 
 export type CustomerDoc = InferSchemaType<typeof CustomerSchema>;
 export type CustomerType = 'customer' | 'supplier';

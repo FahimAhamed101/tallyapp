@@ -34,7 +34,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.workbuddy.tallyclone.data.AppStore
+import com.workbuddy.tallyclone.data.toBengaliDate
 import kotlinx.coroutines.launch
+import java.util.Date
 
 /**
  * ক্যাশ বেচা - the cash entry form with the built-in calculator keypad.
@@ -49,6 +51,7 @@ import kotlinx.coroutines.launch
 fun CashSellScreen(
     store: AppStore,
     onBack: () -> Unit,
+    onOpenReport: () -> Unit,
     kind: String = "cash_sale",
     title: String = "ক্যাশ বেচা",
     amountLabel: String = "পেলাম",
@@ -57,6 +60,9 @@ fun CashSellScreen(
     var amount by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var submitting by remember { mutableStateOf(false) }
+    // Same contract as the ledger form: the pill's date is the posted date.
+    var entryDate by remember { mutableStateOf(Date()) }
+    var showDatePicker by remember { mutableStateOf(false) }
 
     val canSubmit = amount.isNotBlank() && !submitting
 
@@ -64,7 +70,7 @@ fun CashSellScreen(
         if (!canSubmit) return
         submitting = true
         scope.launch {
-            val result = store.addCashboxEntry(kind, amount.trim(), description.trim())
+            val result = store.addCashboxEntry(kind, amount.trim(), description.trim(), entryDate)
             submitting = false
             if (result.isSuccess) onBack()
         }
@@ -117,7 +123,7 @@ fun CashSellScreen(
                 background = TallyColors.SoftPill,
                 textColor = TallyColors.TextPrimary,
                 icon = TallyIcons.Document,
-                onClick = {},
+                onClick = onOpenReport,
             )
         }
         Hairline()
@@ -149,12 +155,12 @@ fun CashSellScreen(
             Spacer(Modifier.height(14.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 PillButton(
-                    label = "০৪ অক্টোবর, ২৬",
+                    label = toBengaliDate(entryDate),
                     background = TallyColors.SoftPill,
                     textColor = TallyColors.TextPrimary,
                     icon = TallyIcons.Calendar,
                     bold = false,
-                    onClick = {},
+                    onClick = { showDatePicker = true },
                 )
                 Spacer(Modifier.weight(1f))
                 PillButton(
@@ -187,6 +193,17 @@ fun CashSellScreen(
             },
         )
         Spacer(Modifier.navigationBarsPadding())
+    }
+
+    if (showDatePicker) {
+        TallyDatePickerDialog(
+            initial = entryDate,
+            onDismiss = { showDatePicker = false },
+            onConfirm = {
+                entryDate = it
+                showDatePicker = false
+            },
+        )
     }
 }
 

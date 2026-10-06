@@ -52,7 +52,9 @@ export const PATCH = handler(async (req: NextRequest, ctx: Ctx) => {
   return NextResponse.json({
     ok: true,
     entry: cashboxEntryView(doc),
-    dashboard: await cashboxDashboard(doc.owner),
+    // Whole-account scope: the panel deliberately spans every business the
+    // owning user has, not just whichever one is active on their phone.
+    dashboard: await cashboxDashboard({ owner: doc.owner, business: null }),
   });
 });
 
@@ -66,6 +68,6 @@ export const DELETE = handler(async (req: NextRequest, ctx: Ctx) => {
   return NextResponse.json({
     ok: true,
     deletedId: ctx.params.id,
-    dashboard: await cashboxDashboard(owner),
+    dashboard: await cashboxDashboard({ owner, business: null }),
   });
 });

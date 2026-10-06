@@ -42,14 +42,39 @@ Everything the Android app calls, reimplemented as `app/api/**/route.ts`:
 | Auth | register, login, me, logout, password |
 | Uploads | status, `POST /api/uploads`, two DELETE forms |
 | App shell | profile, summary, wallet, open-account, menu, bootstrap, reports |
+| Businesses | list, create, read, update, delete, stats (মাল্টি ব্যবসা) |
+| **Stock** | list, create, read, update, delete, a product's movements (স্টক হিসাব) |
 | Customers | list, create, read, update, delete, transactions list + create |
 | Cash box | dashboard, entries list, create, delete |
-| **Admin (new)** | login, logout, me, stats, users, customers, transactions, cashbox, endpoints |
+| **Admin (new)** | login, logout, me, stats, users, businesses, stock, customers, transactions, cashbox, endpoints |
 
-**48 endpoints in total.** Open `/admin/endpoints` in the panel to see the whole
+**64 endpoints in total.** Open `/admin/endpoints` in the panel to see the whole
 catalogue — that page is server-rendered from `lib/endpoints.ts`, which is the
 same module `GET /api/admin/endpoints` serialises and the smoke test walks, so
 the list, the JSON and the tests can never disagree.
+
+### Stock (স্টক হিসাব) is derived, never stored
+
+```
+quantity = openingStock + Σ(movements in) − Σ(movements out)
+```
+
+`lib/stock.ts` is the whole domain layer. `StockMovement` is append-only, so a
+mistake is corrected by recording the opposite movement and the quantity can
+always be recomputed from the log. Nothing stores a running total — the same
+rule `Customer` balances follow, and for the same reason: a second source of
+truth drifts invisibly, and when the two disagree nobody can tell which is wrong.
+
+Two things worth knowing before touching this module:
+
+* **`$in` does not cast in an aggregation pipeline.** It casts array elements in
+  `Model.find()`, but the pipeline is handed to the server verbatim, so a 24-hex
+  *string* compared against an ObjectId matches nothing and every quantity reads
+  as its opening stock. All movement aggregation goes through one
+  `aggregateTotals(match)` helper so the coercion (`asIds`) cannot be forgotten
+  on a new path. This is the same defect class as the ৳০.০০ admin balances.
+* **A threshold of `0` means "do not warn"**, which is deliberately not the same
+  as "warn at zero". `lowStock` is `threshold > 0 && quantity <= threshold`.
 
 ### New admin-only routes
 
@@ -66,6 +91,12 @@ GET    /api/admin/users              every account + per-user counters
 GET    /api/admin/users/:id          one account: profile, wallet, totals, recent ledger
 PATCH  /api/admin/users/:id          rename, re-phone, promote/demote, disable
 DELETE /api/admin/users/:id          delete the account and cascade everything it owns
+GET    /api/admin/businesses         every book across all accounts
+PATCH  /api/admin/businesses/:id
+DELETE /api/admin/businesses/:id
+GET    /api/admin/stock              every product across all accounts, with derived quantities
+PATCH  /api/admin/stock/:id
+DELETE /api/admin/stock/:id
 GET    /api/admin/customers          every customer/supplier across all accounts
 GET    /api/admin/customers/:id
 PATCH  /api/admin/customers/:id
@@ -79,6 +110,13 @@ DELETE /api/admin/cashbox/:id
 GET    /api/admin/endpoints          the catalogue as JSON
 ```
 
+The two cross-account list routes (`/businesses`, `/stock`) need a second pass
+over the rows they just fetched: `totalsForItemIds` aggregates movements for a
+page of items **without** a scope filter, because filtering by one book would
+make the panel blind to exactly the rows it exists to show. The ids come straight
+off the documents, so they are already real ObjectIds — but the helper still
+routes them through `asObjectId` so the rule is stated in one place.
+
 ---
 
 ## Admin panel
@@ -90,6 +128,7 @@ GET    /api/admin/endpoints          the catalogue as JSON
 | `/admin/users` | All accounts. Search, role filter, inline promote/demote/disable, edit, delete. |
 | `/admin/users/:id` | One account in full — profile, wallet, totals, recent ledger. |
 | `/admin/customers` | Every customer/supplier, with the owning account and derived balance. |
+| `/admin/stock` | Every product across all accounts, with derived quantity, both valuations and a স্টক কম chip. |
 | `/admin/transactions` | Cross-account ledger with date range + kind filters and inline correction. |
 | `/admin/cashbox` | Cross-account cash movements, with the page's net total. |
 | `/admin/endpoints` | The API explorer — every route, its auth level and shape, with a live "চালান" probe. |
@@ -235,23 +274,23 @@ catch the bug it was written for.
   someone else's customer, on both read and delete.
 * **Role enforcement** — `/api/admin/*` with no cookie → 401, with a genuine
   *non-admin* token → 403, with the admin cookie → 200.
-* **Route existence** — walks all 48 catalogue entries and probes each with a
+* **Route existence** — walks all 64 catalogue entries and probes each with a
   verb the route does not export. Next answers **405** when the path is
   registered and 404 when it is not, which proves registration without writing
-  anything. Plus all 19 parameterless GETs must answer 200.
+  anything. Plus all 28 parameterless GETs must answer 200.
 
 ### Latest run
 
-`typecheck` clean, `build` exit 0, and `smoke` **80 passed / 0 failed** — re-run
+`typecheck` clean, `build` exit 0, and `smoke` **135 passed / 0 failed** — re-run
 against the **production** server (`next start -p 4000`), not just `next dev`.
 
 Independently confirmed over HTTP:
 
 | Check | Result |
 |---|---|
-| `/admin`, `/admin/users`, `/admin/customers`, `/admin/transactions`, `/admin/cashbox` | 200 with cookie, 307 → `/admin/login` without |
-| `/admin/endpoints` | 200, **89.6 KB**, renders **48 rows across 7 groups** |
-| Method badges on that page | 23 GET + 11 POST + 6 PATCH + 8 DELETE = **48** |
+| `/admin`, `/admin/users`, `/admin/customers`, `/admin/stock`, `/admin/transactions`, `/admin/cashbox` | 200 with cookie, 307 → `/admin/login` without |
+| `/admin/endpoints` | 200, renders **64 rows across 9 groups** |
+| Method badges on that page | 28 GET + 14 POST + 10 PATCH + 12 DELETE = **64** |
 | `Bearer` on the 10 Android-facing GETs | all 200 |
 | `tally_session` cookie on `/api/admin/stats` | 200 |
 | No credentials on `/api/profile` | 401 |
@@ -259,8 +298,14 @@ Independently confirmed over HTTP:
 | Bengali round-trip `১,২৫০.৫০` | stored `1250.5`, echoed `১,২৫০.৫০`, tone `in`, `০৫ অক্টোবর, ২৬` |
 | RTK Query in the browser bundle | `admin/stats`, `admin/users`, `Cashbox` tags present in every panel chunk |
 
-38 RTK Query hooks (30 admin + 6 auth + 2 catalogue) on one `createApi` slice
-with 7 tag types.
+25 generated RTK Query hooks (21 admin + 3 auth + 1 catalogue) on one `createApi`
+slice with 9 tag types.
+
+**Restart the server after a rebuild.** `next start` loads `.next` once at boot, so
+a server left running across a build keeps serving the previous bundle — and the
+symptom is a smoke failure about routes that are plainly on disk. That happened
+here: `/api/admin/stock` 404'd from a server started four minutes before the build
+that added it.
 
 ### Image upload round-trip (`npm run upload-check`)
 
@@ -425,13 +470,17 @@ dropped and the guard will bounce you back to login.
 
 ## Android compatibility
 
-`app/src/main/java/com/workbuddy/tallyclone/data/ApiClient.kt` still points at:
+`app/src/main/java/com/workbuddy/tallyclone/data/ApiClient.kt` reads its base URL from
+`BuildConfig.API_BASE`, which is baked in at build time so retargeting needs no source edit:
 
-```kotlin
-var baseUrl = "http://127.0.0.1:4000/api"
+```bash
+./gradlew.bat :app:assembleDebug -PapiBase=http://127.0.0.1:4000/api --rerun-tasks
 ```
 
-Nothing needs to change. Keep the tunnel up with:
+`--rerun-tasks` is **not** optional. `API_BASE` is a compile-time constant that Kotlin inlines
+into `ApiClient`, so it lands in two dex shards; Gradle's incremental dexing will rebuild one and
+leave the previous URL in the other, producing an APK that contains *both* with the runtime winner
+decided by dex order. Then keep the tunnel up with:
 
 ```bash
 adb reverse tcp:4000 tcp:4000
@@ -441,8 +490,9 @@ One detail worth knowing: `java.net.HttpURLConnection` refuses to send `PATCH`,
 so the app sends `POST` with `X-HTTP-Method-Override: PATCH`. Express rewrote
 `req.method` before dispatch; Next.js dispatches on the real verb, so the
 override is resolved *inside* the handler instead — see
-`lib/route-utils.ts`. The affected routes are `/api/profile` and
-`/api/customers/:id`, both marked `override` in the explorer.
+`lib/route-utils.ts`. The affected routes are `/api/profile`,
+`/api/customers/:id`, `/api/businesses/:id` and `/api/stock/:id`, all marked
+`alias` in the explorer.
 
 ### The Android client is verified against this server
 
@@ -453,17 +503,19 @@ JVM, so it needs no device or emulator. Pointed at this Next.js server:
 
 ```bash
 cd ..                                  # the Android project root
-./gradlew.bat testDebugUnitTest --tests "com.workbuddy.tallyclone.ApiContractTest"
+./gradlew.bat -Dapi.base=http://127.0.0.1:4000/api testDebugUnitTest
 ```
 
-**20 tests, 0 failures**, against `http://127.0.0.1:4000/api`. It covers the
-field-name-drift class of bug that compiles cleanly and only shows up on screen:
-bearer auth and the `401 → UnauthorizedException` mapping, per-user isolation
-(cross-tenant read *and* delete must both 404), `bootstrap` sub-objects, customer
-list tones/avatars, ledger entries, the 5 cashbox rows, 8 wallet services, menu
-counts, a full create → transact → edit → delete round-trip with Bengali digits
-(`১২৩.৪৫`), validation failures, the `X-HTTP-Method-Override` PATCH path, and the
-base64 image upload.
+**85 tests, 0 failures, 0 skips**, against `http://127.0.0.1:4000/api`. `ApiContractTest`
+alone contributes 26. The suite covers the field-name-drift class of bug that compiles
+cleanly and only shows up on screen: bearer auth and the `401 → UnauthorizedException`
+mapping, per-user isolation (cross-tenant read *and* delete must both 404), `bootstrap`
+sub-objects, customer list tones/avatars, ledger entries, the 5 cashbox rows, 8 wallet
+services, menu counts, a full create → transact → edit → delete round-trip with Bengali
+digits (`১২৩.৪৫`), validation failures, the `X-HTTP-Method-Override` PATCH path, the base64
+image upload, and the whole স্টক হিসাব surface — the stock list's Bengali labels, a
+movement moving the *derived* quantity in both directions, the low-stock flag crossing its
+threshold, and a delete taking the movement history with it.
 
 Note the wrapper: use **`gradlew.bat`**, not `./gradlew`. The bash script passes a
 POSIX `APP_HOME` that the Windows `java.exe` cannot resolve, which surfaces as

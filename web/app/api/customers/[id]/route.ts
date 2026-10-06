@@ -4,6 +4,7 @@ import Customer, { type CustomerDoc } from '@/lib/models/Customer';
 import Transaction from '@/lib/models/Transaction';
 import { badRequest, handler, notFound, readJson } from '@/lib/api-helpers';
 import { requireAuth } from '@/lib/auth';
+import { resolveScope, scopeFilter } from '@/lib/business';
 import { balanceFor, customerView, ledgerHeadline } from '@/lib/ledger';
 import { destroyImage } from '@/lib/cloudinary';
 import { entryView } from '@/lib/app-data';
@@ -23,10 +24,11 @@ export const dynamic = 'force-dynamic';
 
 type Ctx = RouteContext<{ id: string }>;
 
-/** Loads a customer belonging to the caller, or throws 404. */
+/** Loads a customer in the caller's active business, or throws 404. */
 async function ownCustomer(req: NextRequest, id: string): Promise<HydratedDocument<CustomerDoc>> {
   const { user } = await requireAuth(req);
-  const doc = await Customer.findOne({ _id: id, owner: user._id }).catch(() => null);
+  const { scope } = await resolveScope(req, user);
+  const doc = await Customer.findOne({ _id: id, ...scopeFilter(scope) }).catch(() => null);
   if (!doc) throw notFound('কাস্টমার পাওয়া যায়নি');
   return doc as HydratedDocument<CustomerDoc>;
 }
@@ -58,7 +60,11 @@ export const GET = handler(async (req: NextRequest, ctx: Ctx) => {
 
   const balance = await balanceFor(user._id, doc._id);
   const view = customerView(doc, balance);
-  const entries = await Transaction.find({ customer: doc._id, owner: user._id }).sort({
+  const entries = await Transaction.find({
+    customer: doc._id,
+    owner: user._id,
+    business: doc.business,
+  }).sort({
     date: -1,
   });
 
@@ -110,7 +116,11 @@ export const DELETE = handler(async (req: NextRequest, ctx: Ctx) => {
   const { user } = await requireAuth(req);
   const doc = await ownCustomer(req, ctx.params.id);
 
-  await Transaction.deleteMany({ customer: doc._id, owner: user._id });
+  await Transaction.deleteMany({
+    customer: doc._id,
+    owner: user._id,
+    business: doc.business,
+  });
   if (doc.photoPublicId) await destroyImage(doc.photoPublicId);
   await doc.deleteOne();
 

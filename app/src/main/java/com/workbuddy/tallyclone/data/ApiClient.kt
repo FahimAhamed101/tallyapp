@@ -1,5 +1,6 @@
 package com.workbuddy.tallyclone.data
 
+import com.workbuddy.tallyclone.BuildConfig
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.net.HttpURLConnection
@@ -14,20 +15,36 @@ class UnauthorizedException(message: String) : Exception(message)
  * Minimal JSON-over-HTTP client. Deliberately dependency-free (HttpURLConnection
  * + org.json are both in the platform) so the build stays fast.
  *
- * The device talks to the Express server through an adb reverse tunnel:
- *   adb reverse tcp:4000 tcp:4000   ->   http://127.0.0.1:4000
+ * `baseUrl` defaults to [BuildConfig.API_BASE], which is baked in at build time
+ * so retargeting needs no source edit:
+ *
+ *   ./gradlew assembleDebug -PapiBase=http://127.0.0.1:4000/api
+ *   adb reverse tcp:4000 tcp:4000   # then the device reaches your host's server
+ *
+ * The JVM tests override it at runtime with `-Dapi.base=…` instead, so pointing
+ * a suite at a different backend never touches this file either.
  *
  * Every request carries `Authorization: Bearer <token>` once the user has
- * logged in, which is what scopes the data to their own account.
+ * logged in, which is what scopes the data to their own account. Requests also
+ * carry `X-Business-Id` when a book has been selected, which scopes them to one
+ * of that account's businesses (মাল্টি ব্যবসা); leaving it unset means the
+ * server falls back to the account's primary book.
  */
 object ApiClient {
 
     @Volatile
-    var baseUrl: String = "https://web-zeta-ten-xj1oia2att.vercel.app/api"
+    var baseUrl: String = BuildConfig.API_BASE
 
     /** Set by SessionStore on startup and on login; null when logged out. */
     @Volatile
     var token: String? = null
+
+    /**
+     * The active book (ব্যবসা), or null to let the server use the primary one.
+     * Kept in step with the persisted selection by `AppStore`.
+     */
+    @Volatile
+    var businessId: String? = null
 
     /** Raised when any call comes back 401, so the UI can return to login. */
     @Volatile
@@ -61,10 +78,13 @@ object ApiClient {
             token?.takeIf { it.isNotBlank() }?.let {
                 setRequestProperty("Authorization", "Bearer $it")
             }
+            businessId?.takeIf { it.isNotBlank() }?.let {
+                setRequestProperty("X-Business-Id", it)
+            }
         }
 
         try {
-            // POST/PATCH always carry a body so Express never sees a bare request.
+            // POST/PATCH always carry a body so the server never sees a bare request.
             val payload = when {
                 body != null -> body
                 wireMethod == "POST" -> JSONObject()
@@ -76,9 +96,11 @@ object ApiClient {
                 conn.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
             }
 
+            android.util.Log.d("ApiClient", "REQUEST: $wireMethod $url token=${token?.take(6)} biz=$businessId")
             val status = conn.responseCode
             val stream = if (status in 200..299) conn.inputStream else conn.errorStream
             val text = stream?.bufferedReader(Charsets.UTF_8)?.use(BufferedReader::readText).orEmpty()
+            android.util.Log.d("ApiClient", "RESPONSE: $status text=$text")
 
             if (status !in 200..299) {
                 val message = runCatching { JSONObject(text).optString("message") }

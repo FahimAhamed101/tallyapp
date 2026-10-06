@@ -45,7 +45,9 @@ import com.workbuddy.tallyclone.data.AppStore
 import com.workbuddy.tallyclone.data.CustomerItem
 import com.workbuddy.tallyclone.data.LedgerData
 import com.workbuddy.tallyclone.data.LedgerEntryItem
+import com.workbuddy.tallyclone.data.toBengaliDateShort
 import kotlinx.coroutines.launch
+import java.util.Date
 
 /**
  * Customer ledger screen - reached by tapping a customer on the home tab.
@@ -57,6 +59,7 @@ fun LedgerEntryScreen(
     store: AppStore,
     customerId: String,
     onBack: () -> Unit,
+    onOpenReport: () -> Unit,
     onEdit: (CustomerItem) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
@@ -66,6 +69,10 @@ fun LedgerEntryScreen(
     var gave by remember { mutableStateOf("") }
     var got by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
+    // The date pill is the entry's date. It starts on today and is what gets
+    // posted, so the label can never disagree with the stored date.
+    var entryDate by remember { mutableStateOf(Date()) }
+    var showDatePicker by remember { mutableStateOf(false) }
 
     LaunchedEffect(customerId) {
         loading = true
@@ -82,10 +89,10 @@ fun LedgerEntryScreen(
             // The reference form has two boxes; post them one after the other.
             var ok = true
             if (gave.isNotBlank()) {
-                ok = store.addTransaction(customerId, "gave", gave.trim(), description.trim()).isSuccess && ok
+                ok = store.addTransaction(customerId, "gave", gave.trim(), description.trim(), entryDate).isSuccess && ok
             }
             if (got.isNotBlank()) {
-                ok = store.addTransaction(customerId, "got", got.trim(), description.trim()).isSuccess && ok
+                ok = store.addTransaction(customerId, "got", got.trim(), description.trim(), entryDate).isSuccess && ok
             }
             ledger = store.loadLedger(customerId).getOrNull()
             submitting = false
@@ -194,7 +201,7 @@ fun LedgerEntryScreen(
                     background = TallyColors.SoftPill,
                     textColor = TallyColors.TextPrimary,
                     icon = TallyIcons.Document,
-                    onClick = {},
+                    onClick = onOpenReport,
                 )
             }
 
@@ -233,12 +240,12 @@ fun LedgerEntryScreen(
             // --- date / photo ------------------------------------------
             Row(verticalAlignment = Alignment.CenterVertically) {
                 PillButton(
-                    label = "০৪ অক্টোবর",
+                    label = toBengaliDateShort(entryDate),
                     background = TallyColors.SoftPill,
                     textColor = TallyColors.TextPrimary,
                     icon = TallyIcons.Calendar,
                     bold = false,
-                    onClick = {},
+                    onClick = { showDatePicker = true },
                 )
                 Spacer(Modifier.weight(1f))
                 PillButton(
@@ -284,6 +291,17 @@ fun LedgerEntryScreen(
         )
         Spacer(Modifier.height(16.dp))
         Spacer(Modifier.navigationBarsPadding())
+    }
+
+    if (showDatePicker) {
+        TallyDatePickerDialog(
+            initial = entryDate,
+            onDismiss = { showDatePicker = false },
+            onConfirm = {
+                entryDate = it
+                showDatePicker = false
+            },
+        )
     }
 }
 
