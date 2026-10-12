@@ -117,7 +117,7 @@ private fun CashboxSummary(
         ) {
             BigStat(todaySale, "আজকের বেচা", TallyColors.ZeroRed, Modifier.weight(1f))
             Box(Modifier.width(1.dp).height(52.dp).background(Color(0x33A98E5C)))
-            BigStat(currentCash, "বর্তমান কাশ", TallyColors.ZeroGreen, Modifier.weight(1f))
+            BigStat(currentCash, "বর্তমান ক্যাশ", TallyColors.ZeroGreen, Modifier.weight(1f))
         }
 
         // --- white inner card: আজ পেলাম / আজ দিলাম + actions --------------
@@ -153,7 +153,7 @@ private fun CashboxSummary(
                 )
                 Spacer(Modifier.weight(1f))
                 PillButton(
-                    label = "কাশবক্স মিলাই",
+                    label = "ক্যাশবক্স মিলাই",
                     background = TallyColors.SoftPill,
                     textColor = TallyColors.TextPrimary,
                     icon = TallyIcons.Swap,

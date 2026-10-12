@@ -36,7 +36,7 @@ android {
         // The default is the deployed API, so an unqualified build behaves
         // exactly as it did before this property existed.
         val apiBase = (project.findProperty("apiBase") as String?)
-            ?: "http://127.0.0.1:4000/api"
+            ?: "https://web-zeta-ten-xj1oia2att.vercel.app/api"
         buildConfigField("String", "API_BASE", "\"$apiBase\"")
     }
 

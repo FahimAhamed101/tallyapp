@@ -14,6 +14,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.workbuddy.tallyclone.data.ApiClient
 import com.workbuddy.tallyclone.data.AppStore
+import com.workbuddy.tallyclone.data.CashEntryReceipt
 import com.workbuddy.tallyclone.data.CustomerItem
 import com.workbuddy.tallyclone.data.StockDetail
 import com.workbuddy.tallyclone.data.StockItem
@@ -39,6 +40,9 @@ sealed interface TallyScreen {
         val title: String,
         val amountLabel: String,
     ) : TallyScreen
+
+    /** "লেনদেনটি রেকর্ড করা হয়েছে।" — shown after a cash entry lands. */
+    data class CashDone(val receipt: CashEntryReceipt) : TallyScreen
 
     /** সাইডবার মেনু রিপোর্ট স্ক্রিনসমূহ (বেচা কেনা, খরচ, বাকি, ক্যাশ হিসাব) */
     data object SalesPurchaseReport : TallyScreen
@@ -156,6 +160,24 @@ fun AppRoot() {
         }
     }
 
+    /**
+     * The report screens are fetched on arrival, not bootstrapped.
+     *
+     * They are the only destinations whose numbers depend on the period the user
+     * has paged to, so a copy loaded during bootstrap would be right for
+     * whatever month it happened to be loaded in. Landing on one always starts
+     * from the current period; the ‹ › arrows then drive it through
+     * `onLoadPeriod`.
+     */
+    LaunchedEffect(screen) {
+        when (val target = screen) {
+            is TallyScreen.CashAccountReport ->
+                store.refreshCashReport(if (target.initialTab == 0) "day" else "month", null)
+            TallyScreen.OwnerReport -> store.refreshOwnerReport()
+            else -> Unit
+        }
+    }
+
     if (store.authChecking) {
         BootOverlay(label = "সেশন যাচাই হচ্ছে…")
         return
@@ -195,6 +217,9 @@ fun AppRoot() {
                 screen = TallyScreen.Settings
             screen == TallyScreen.OwnerReport ->
                 screen = TallyScreen.CashAccountReport(1)
+            // The confirmation belongs to the ক্যাশবক্স tab, which is where the
+            // entry was started; the generic fallback would drop you on home.
+            screen is TallyScreen.CashDone -> screen = TallyScreen.Cashbox
             else -> screen = TallyScreen.Home
         }
     }
@@ -284,6 +309,15 @@ fun AppRoot() {
                 // Tab 1 is "ক্যাশ রিপোর্ট" — this form writes cash movements, so
                 // that is the report it belongs to.
                 onOpenReport = { screen = TallyScreen.CashAccountReport(1) },
+                // The shortfall dialog's two shortcuts: leaving the form for the
+                // one that puts money in is the whole point of offering them.
+                onOpenForm = { key -> CASH_FORMS[key]?.let { screen = it } },
+                onDone = { screen = TallyScreen.CashDone(it) },
+            )
+
+            is TallyScreen.CashDone -> CashDoneScreen(
+                receipt = current.receipt,
+                onBack = { screen = TallyScreen.Cashbox },
             )
 
             TallyScreen.SalesPurchaseReport -> SalesPurchaseReportScreen(
@@ -306,6 +340,11 @@ fun AppRoot() {
                 initialTab = current.initialTab,
                 onBack = { screen = TallyScreen.Home },
                 onOpenOwnerReport = { screen = TallyScreen.OwnerReport },
+                onLoadPeriod = { tab, key ->
+                    scope.launch {
+                        store.refreshCashReport(if (tab == 0) "day" else "month", key)
+                    }
+                },
             )
 
             TallyScreen.StockList -> StockListScreen(
@@ -386,8 +425,9 @@ fun AppRoot() {
             )
 
             TallyScreen.OwnerReport -> OwnerReportScreen(
-                store = store,
+                report = store.ownerReport,
                 onBack = { screen = TallyScreen.Home },
+                onLoadPeriod = { key -> scope.launch { store.refreshOwnerReport(key) } },
             )
         }
 

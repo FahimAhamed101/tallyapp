@@ -61,6 +61,21 @@ class AppStore {
     var menu by mutableStateOf<MenuData?>(null)
         private set
 
+    // ---- ক্যাশ হিসাব / মালিকের রিপোর্ট -------------------------------------
+
+    /**
+     * The two report payloads.
+     *
+     * Fetched on demand rather than bootstrapped, because they are the only
+     * screens whose numbers depend on the period the user has paged to: a
+     * bootstrapped copy would be right for whatever month it was loaded in and
+     * silently wrong the moment the ‹ › arrows moved.
+     */
+    var cashReport by mutableStateOf<CashReportData?>(null)
+        private set
+    var ownerReport by mutableStateOf<OwnerReportData?>(null)
+        private set
+
     // ---- স্টক হিসাব --------------------------------------------------------
 
     /** Every product in the active book, name-ordered, with derived quantities. */
@@ -228,6 +243,8 @@ class AppStore {
         cashbox = null
         wallet = null
         menu = null
+        cashReport = null
+        ownerReport = null
         stock = emptyList()
         stockSummary = null
         settings = null
@@ -389,6 +406,33 @@ class AppStore {
 
     suspend fun loadReportSummary(): Result<ReportSummaryData> = call {
         ReportSummaryData.from(ApiClient.get("/reports/summary"))
+    }
+
+    // ---- ক্যাশ হিসাব / মালিকের রিপোর্ট -------------------------------------
+
+    /**
+     * One tab of ক্যাশ হিসাব.
+     *
+     * `period` is "day" or "month"; `key` is the period the user has paged to
+     * with the ‹ › arrows, or null for the current one. The opening balance is
+     * computed server-side from every earlier movement, so the rows reconcile
+     * with বর্তমান ক্যাশ instead of starting from zero.
+     */
+    suspend fun refreshCashReport(period: String, key: String? = null): Result<CashReportData> = call {
+        val query = if (key.isNullOrBlank()) "period=$period" else "period=$period&key=$key"
+        CashReportData.from(ApiClient.get("/reports/cash?$query"))
+    }.onSuccess {
+        cashReport = it
+        connected = true
+    }
+
+    /** মালিকের রিপোর্ট — `key` is 'YYYY-MM', or null for the current month. */
+    suspend fun refreshOwnerReport(key: String? = null): Result<OwnerReportData> = call {
+        val query = if (key.isNullOrBlank()) "" else "?key=$key"
+        OwnerReportData.from(ApiClient.get("/reports/owner$query"))
+    }.onSuccess {
+        ownerReport = it
+        connected = true
     }
 
     // ---- স্টক হিসাব --------------------------------------------------------
@@ -563,6 +607,8 @@ class AppStore {
         customers = emptyList()
         summary = null
         cashbox = null
+        cashReport = null
+        ownerReport = null
         stock = emptyList()
         stockSummary = null
         notes = emptyList()
@@ -623,6 +669,8 @@ class AppStore {
                 customers = emptyList()
                 summary = null
                 cashbox = null
+                cashReport = null
+                ownerReport = null
                 stock = emptyList()
                 stockSummary = null
                 bootstrap()
@@ -716,6 +764,8 @@ class AppStore {
         amount: String,
         description: String,
         date: Date? = null,
+        photoUrl: String? = null,
+        photoPublicId: String? = null,
     ): Result<LedgerData> {
         val body = JSONObject()
             .put("box", box)
@@ -724,6 +774,12 @@ class AppStore {
         // Omitted means "now": the server defaults a missing date to the current
         // time, so leaving this null preserves the pre-existing behaviour exactly.
         if (date != null) body.put("date", toWireDate(date))
+        // The ছবি pill's Cloudinary URL; omitted entirely when no photo was
+        // attached so the server keeps its default of ''.
+        if (!photoUrl.isNullOrBlank()) {
+            body.put("photoUrl", photoUrl)
+            body.put("photoPublicId", photoPublicId.orEmpty())
+        }
         val result = call {
             ApiClient.post("/customers/$customerId/transactions", body)
             LedgerData.from(ApiClient.get("/customers/$customerId"))
@@ -742,7 +798,14 @@ class AppStore {
         amount: String,
         description: String,
         date: Date? = null,
-    ): Result<CashboxDashboard> {
+        photoUrl: String? = null,
+        photoPublicId: String? = null,
+    ): Result<CashEntryReceipt> {
+        // Read before the write. The confirmation screen contrasts the drawer as
+        // it was with the drawer as it now is, and the "was" is unrecoverable
+        // once the entry has landed.
+        val before = cashbox?.currentCash ?: "০.০০"
+
         val body = JSONObject()
             .put("kind", kind)
             .put("amount", amount)
@@ -750,16 +813,31 @@ class AppStore {
         // Omitted means "now", exactly as for [addTransaction]: the server fills in
         // the current time when the field is absent.
         if (date != null) body.put("date", toWireDate(date))
-        val result = call {
-            ApiClient.post("/cashbox/entries", body)
-            CashboxDashboard.from(ApiClient.get("/cashbox"))
+        // The ছবি pill's Cloudinary URL; omitted entirely when no photo was
+        // attached so the server keeps its default of ''.
+        if (!photoUrl.isNullOrBlank()) {
+            body.put("photoUrl", photoUrl)
+            body.put("photoPublicId", photoPublicId.orEmpty())
         }
-        result.onSuccess {
+
+        val result = call {
+            val created = ApiClient.post("/cashbox/entries", body)
+            val fresh = CashboxDashboard.from(ApiClient.get("/cashbox"))
+            val entry = created.optJSONObject("entry")
+            CashEntryReceipt(
+                kind = kind,
+                label = entry?.optString("title").orEmpty().ifBlank { kind },
+                amountDisplay = entry?.optString("amountDisplay").orEmpty().ifBlank { amount },
+                beforeCash = before,
+                afterCash = fresh.currentCash,
+            ) to fresh
+        }
+        result.onSuccess { (_, fresh) ->
             connected = true
-            cashbox = it
+            cashbox = fresh
             refreshHome()
         }
-        return result
+        return result.map { it.first }
     }
 
     /** টালিপে একাউন্ট খুলুন. */

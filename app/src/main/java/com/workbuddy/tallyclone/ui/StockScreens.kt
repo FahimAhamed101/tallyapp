@@ -655,6 +655,8 @@ fun StockFormScreen(
                 onValueChange = { note = it },
                 placeholder = "বিবরণ",
                 icon = TallyIcons.NoteEdit,
+                singleLine = false,
+                minHeight = 88.dp,
             )
 
             // The threshold is the one field whose meaning is not obvious from
@@ -1095,6 +1097,8 @@ private fun MovementSheet(
                 onValueChange = { note = it },
                 placeholder = "বিবরণ",
                 icon = TallyIcons.NoteEdit,
+                singleLine = false,
+                minHeight = 88.dp,
             )
 
             Spacer(Modifier.height(12.dp))

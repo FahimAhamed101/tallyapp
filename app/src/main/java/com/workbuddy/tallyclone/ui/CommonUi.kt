@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -23,15 +24,24 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -309,7 +319,14 @@ fun Hairline(color: Color = TallyColors.DividerGray, thickness: androidx.compose
     Box(Modifier.fillMaxWidth().height(thickness).background(color))
 }
 
-/** Rounded text field with a leading line-art icon (forms). */
+/**
+ * Rounded text field with a leading line-art icon (forms).
+ *
+ * [singleLine] = false turns the same box into the multi-line বিবরণ field: the
+ * box grows to [minHeight], top-aligns its content and lets the soft keyboard's
+ * Enter key insert a newline, because a description is a paragraph — the 56dp
+ * single-line box showed the first few words and hid the rest.
+ */
 @Composable
 fun TallyField(
     value: String,
@@ -318,16 +335,18 @@ fun TallyField(
     icon: List<String>? = null,
     prefix: String? = null,
     modifier: Modifier = Modifier,
+    singleLine: Boolean = true,
+    minHeight: androidx.compose.ui.unit.Dp = 56.dp,
 ) {
     Row(
         modifier
             .fillMaxWidth()
-            .height(56.dp)
+            .heightIn(min = minHeight)
             .clip(RoundedCornerShape(8.dp))
             .background(Color.White)
             .border(1.dp, TallyColors.FieldBorder, RoundedCornerShape(8.dp))
-            .padding(horizontal = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(horizontal = 14.dp, vertical = if (singleLine) 0.dp else 14.dp),
+        verticalAlignment = if (singleLine) Alignment.CenterVertically else Alignment.Top,
     ) {
         if (icon != null) {
             LineIcon(icon, TallyColors.TextPrimary, 22.dp, strokeWidth = 1.7f)
@@ -337,14 +356,17 @@ fun TallyField(
             Text(prefix, fontSize = 17.sp, color = TallyColors.TextPrimary)
             Spacer(Modifier.width(8.dp))
         }
-        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+        Box(
+            Modifier.weight(1f),
+            contentAlignment = if (singleLine) Alignment.CenterStart else Alignment.TopStart,
+        ) {
             if (value.isEmpty()) {
                 Text(placeholder, fontSize = 15.sp, color = TallyColors.TextHint, maxLines = 1)
             }
             androidx.compose.foundation.text.BasicTextField(
                 value = value,
                 onValueChange = onValueChange,
-                singleLine = true,
+                singleLine = singleLine,
                 textStyle = androidx.compose.ui.text.TextStyle(
                     fontSize = 15.sp,
                     color = TallyColors.TextPrimary,
@@ -352,6 +374,83 @@ fun TallyField(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
+    }
+}
+
+/**
+ * Boxed field with a floating label riding its outline.
+ *
+ * The cash forms use these rather than [TallyField], which puts the label in
+ * the box as a placeholder: once a value is typed the label is gone, so a
+ * filled form stops saying what its fields are. A label on the border stays
+ * readable either way.
+ *
+ * [minHeight] is what turns the same widget into the multi-line বিবরণ box. A
+ * description is a sentence — "dgfdgfdgfdg jghj" — and a 56dp single-line box
+ * showed a few words of it and hid the rest.
+ */
+@Composable
+fun TallyLabelledField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    icon: List<String>? = null,
+    prefix: String? = null,
+    singleLine: Boolean = true,
+    minHeight: androidx.compose.ui.unit.Dp = 56.dp,
+    keyboardType: KeyboardType = KeyboardType.Text,
+) {
+    var focused by remember { mutableStateOf(false) }
+    // The label goes red as soon as the field is in play — focused or filled —
+    // while the outline only reddens on focus, which is what the reference
+    // shows on a form with one filled field and one being typed into.
+    val labelColor = if (focused || value.isNotEmpty()) TallyColors.CtaRed else TallyColors.TextHint
+    val borderColor = if (focused) TallyColors.CtaRed else TallyColors.FieldBorder
+
+    Box(modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = minHeight)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color.White)
+                .border(1.dp, borderColor, RoundedCornerShape(8.dp))
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = if (singleLine) Alignment.CenterVertically else Alignment.Top,
+        ) {
+            if (icon != null) {
+                LineIcon(icon, TallyColors.TextBody, 20.dp, strokeWidth = 1.7f)
+                Spacer(Modifier.width(10.dp))
+            }
+            if (prefix != null) {
+                Text(prefix, fontSize = 17.sp, color = TallyColors.TextPrimary)
+                Spacer(Modifier.width(8.dp))
+            }
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                singleLine = singleLine,
+                textStyle = TextStyle(fontSize = 16.sp, color = TallyColors.TextPrimary),
+                keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+                modifier = Modifier
+                    .weight(1f)
+                    .onFocusChanged { focused = it.isFocused },
+            )
+        }
+
+        // The white plate behind the label is what "cuts" the border line, so
+        // the two do not cross through the glyphs.
+        Text(
+            text = label,
+            fontSize = 12.sp,
+            color = labelColor,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .offset(x = 10.dp, y = (-8).dp)
+                .background(Color.White)
+                .padding(horizontal = 4.dp),
+        )
     }
 }
 

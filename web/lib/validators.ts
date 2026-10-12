@@ -133,6 +133,9 @@ export const transactionCreateSchema = z
     amount: amountField,
     description: z.string().optional().default(''),
     hasPhoto: boolField.optional().default(false),
+    /** ছবি pill: the uploaded Cloudinary URL plus its public_id. */
+    photoUrl: z.string().trim().max(500).optional().default(''),
+    photoPublicId: z.string().trim().max(200).optional().default(''),
     date: optionalDate,
   })
   .refine((v) => Boolean(v.box || v.kind), {
@@ -151,6 +154,9 @@ export const cashboxCreateSchema = z.object({
   description: z.string().optional().default(''),
   category: z.string().optional().default(''),
   hasPhoto: boolField.optional().default(false),
+  /** ছবি pill: the uploaded Cloudinary URL plus its public_id. */
+  photoUrl: z.string().trim().max(500).optional().default(''),
+  photoPublicId: z.string().trim().max(200).optional().default(''),
   date: optionalDate,
 });
 

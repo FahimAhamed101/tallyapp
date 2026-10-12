@@ -1,9 +1,7 @@
 package com.workbuddy.tallyclone.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,6 +10,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -23,12 +22,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -40,61 +33,36 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.workbuddy.tallyclone.data.AppStore
-import com.workbuddy.tallyclone.data.CashboxEntryItem
-import com.workbuddy.tallyclone.data.toBengaliDate
-import com.workbuddy.tallyclone.data.toBengaliDigits
-import kotlinx.coroutines.launch
-import java.util.Date
+import com.workbuddy.tallyclone.data.OwnerReportData
+import com.workbuddy.tallyclone.data.OwnerReportDayItem
 
 /**
- * মালিকের রিপোর্ট — Dedicated Owner's Report Screen.
+ * মালিকের রিপোর্ট — the owner's deposits and withdrawals.
  *
- * Matches reference screenshot:
- * - Back button + "মালিকের রিপোর্ট"
- * - Filter bar: "মাস v" dropdown + Calendar "অক্টোবর" with < > arrows
- * - Table header: "বিবরণ [download]", "মালিক দিল", "মালিক নিল"
- * - Rows with dashed dividers
- * - Bottom pinned totals: "মোট" with grey box, "ব্যালেন্স"
+ * The previous version of this screen invented its own numbers: with no entries
+ * it rendered a row reading "৫,২১১.০০" and a matching total, so an account that
+ * had never seen a single owner movement was shown a balance of ৫,২১১. A report
+ * that fabricates a plausible figure when it has no data is worse than an empty
+ * one — there is no way to tell the two apart on screen.
+ *
+ * It also listed one row per entry. The reference groups by day, which is what
+ * makes মোট mean anything: two deposits and a withdrawal on the same afternoon
+ * are one ১২ অক্টোবর row, not three rows all carrying that date.
+ *
+ * The whole period comes down from the server, so this is a pure renderer.
  */
 @Composable
 fun OwnerReportScreen(
-    store: AppStore,
+    report: OwnerReportData?,
     onBack: () -> Unit,
+    onLoadPeriod: (String?) -> Unit = {},
 ) {
-    val scope = rememberCoroutineScope()
-    var entries by remember { mutableStateOf<List<CashboxEntryItem>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
-
-    LaunchedEffect(Unit) {
-        loading = true
-        // Load cashbox entries
-        val res = store.loadCashboxEntries()
-        res.onSuccess { all ->
-            entries = all.filter { it.kind == "owner_in" || it.kind == "owner_out" }
-        }
-        loading = false
-    }
-
-    // Totals
-    var totalIn = 0.0
-    var totalOut = 0.0
-    entries.forEach { e ->
-        val amt = e.amountRaw
-        if (e.kind == "owner_in") totalIn += amt else totalOut += amt
-    }
-    val balance = totalIn - totalOut
-
-    val totalInDisplay = if (totalIn == 0.0 && entries.isEmpty()) "৫,২১১.০০" else toBengaliDigits(String.format("%.2f", totalIn))
-    val totalOutDisplay = if (totalOut == 0.0 && entries.isEmpty()) "০.০০" else toBengaliDigits(String.format("%.2f", totalOut))
-    val balanceDisplay = if (balance == 0.0 && entries.isEmpty()) "৫,২১১.০০" else toBengaliDigits(String.format("%.2f", balance))
-
     Column(
         Modifier
             .fillMaxSize()
             .background(Color.White),
     ) {
-        // Toolbar
+        // --- toolbar ------------------------------------------------------
         Column {
             Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
             Row(
@@ -123,14 +91,13 @@ fun OwnerReportScreen(
             Hairline()
         }
 
-        // Filter Bar (মাস v, [Cal] অক্টোবর < >)
+        // --- period bar: মাস v | [Cal] অক্টোবর < > -------------------------
         Row(
             Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // "মাস v" pill
             Row(
                 Modifier
                     .clip(RoundedCornerShape(20.dp))
@@ -145,7 +112,6 @@ fun OwnerReportScreen(
 
             Spacer(Modifier.width(10.dp))
 
-            // Calendar pill: [Cal] অক্টোবর < >
             Row(
                 Modifier
                     .clip(RoundedCornerShape(20.dp))
@@ -155,12 +121,18 @@ fun OwnerReportScreen(
             ) {
                 LineIcon(TallyIcons.Calendar, Color(0xFF6B7280), 16.dp, strokeWidth = 1.7f)
                 Spacer(Modifier.width(6.dp))
-                Text("অক্টোবর", fontSize = 13.5.sp, color = Color(0xFF374151))
+                Text(
+                    text = report?.periodLabel ?: "…",
+                    fontSize = 13.5.sp,
+                    color = Color(0xFF374151),
+                )
                 Spacer(Modifier.width(10.dp))
                 Box(
                     Modifier
                         .size(20.dp)
-                        .clickable { },
+                        .clickable {
+                            onLoadPeriod(shiftPeriod("month", report?.periodKey, -1))
+                        },
                     contentAlignment = Alignment.Center,
                 ) {
                     LineIcon(TallyIcons.ChevronLeft, Color(0xFF6B7280), 14.dp, strokeWidth = 1.8f)
@@ -169,15 +141,24 @@ fun OwnerReportScreen(
                 Box(
                     Modifier
                         .size(20.dp)
-                        .clickable { },
+                        .clickable(enabled = report?.canNext == true) {
+                            onLoadPeriod(shiftPeriod("month", report?.periodKey, 1))
+                        },
                     contentAlignment = Alignment.Center,
                 ) {
-                    LineIcon(TallyIcons.ChevronRight, Color(0xFF6B7280), 14.dp, strokeWidth = 1.8f)
+                    LineIcon(
+                        TallyIcons.ChevronRight,
+                        // The arrows never walk into the future, so the disabled
+                        // one has to look disabled.
+                        if (report?.canNext == true) Color(0xFF6B7280) else Color(0xFFC7CBD1),
+                        14.dp,
+                        strokeWidth = 1.8f,
+                    )
                 }
             }
         }
 
-        // Table Header: বিবরণ [download], মালিক দিল, মালিক নিল
+        // --- table header -------------------------------------------------
         Row(
             Modifier
                 .fillMaxWidth()
@@ -186,15 +167,8 @@ fun OwnerReportScreen(
                 .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                Modifier.weight(1.3f),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "বিবরণ",
-                    fontSize = 14.sp,
-                    color = Color(0xFF4B5563),
-                )
+            Row(Modifier.weight(1.3f), verticalAlignment = Alignment.CenterVertically) {
+                Text("বিবরণ", fontSize = 14.sp, color = Color(0xFF4B5563))
                 Spacer(Modifier.width(6.dp))
                 Box(
                     Modifier
@@ -222,40 +196,24 @@ fun OwnerReportScreen(
             )
         }
 
-        // Rows
-        LazyColumn(
-            Modifier
-                .weight(1f)
-                .fillMaxWidth(),
-        ) {
-            if (entries.isEmpty() && !loading) {
-                // Show default sample row matching screenshot if no entries yet
-                item {
-                    OwnerReportRow(
-                        dateText = toBengaliDate(Date()),
-                        gave = "৫,২১১.০০",
-                        took = "০.০০",
-                    )
-                }
-            } else {
-                items(entries) { entry ->
-                    val isGave = entry.kind == "owner_in"
-                    OwnerReportRow(
-                        dateText = entry.dateDisplay.ifBlank { toBengaliDate(Date()) },
-                        gave = if (isGave) entry.amountDisplay else null,
-                        took = if (!isGave) entry.amountDisplay else null,
-                    )
-                }
+        // --- rows ---------------------------------------------------------
+        val rows = report?.rows.orEmpty()
+        if (rows.isEmpty()) {
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Text(
+                    text = if (report == null) "লোড হচ্ছে…" else "এই মাসে কোনো মালিক লেনদেন নেই",
+                    fontSize = 14.sp,
+                    color = Color(0xFF9CA3AF),
+                )
+            }
+        } else {
+            LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+                items(rows) { day -> OwnerReportRow(day) }
             }
         }
 
-        // Pinned Bottom Summary
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .background(Color.White),
-        ) {
-            // Row 1: মোট | ৫,২১১.০০ (grey box) | ০.০০
+        // --- pinned totals ------------------------------------------------
+        Column(Modifier.fillMaxWidth().background(Color.White)) {
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -279,7 +237,7 @@ fun OwnerReportScreen(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = totalInDisplay,
+                        text = report?.totalGave ?: "০.০০",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF108A00),
@@ -293,7 +251,7 @@ fun OwnerReportScreen(
                     contentAlignment = Alignment.CenterEnd,
                 ) {
                     Text(
-                        text = totalOutDisplay,
+                        text = report?.totalTook ?: "০.০০",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFFD32F2F),
@@ -308,7 +266,6 @@ fun OwnerReportScreen(
                     .background(Color(0xFFE5E7EB)),
             )
 
-            // Row 2: ব্যালেন্স | ৫,২১১.০০
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -324,25 +281,25 @@ fun OwnerReportScreen(
                     modifier = Modifier.weight(1.3f),
                 )
                 Text(
-                    text = balanceDisplay,
+                    text = report?.balance ?: "০.০০",
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1F2937),
+                    // More withdrawn than deposited is a real answer, not an
+                    // error, so the sign is kept and the colour follows it.
+                    color = if (report?.balanceNegative == true) Color(0xFFD32F2F) else Color(0xFF1F2937),
                     textAlign = TextAlign.Center,
                     modifier = Modifier.weight(1f),
                 )
                 Spacer(Modifier.weight(1f))
             }
+            Spacer(Modifier.navigationBarsPadding())
         }
     }
 }
 
+/** One day: what the owner put in and took out that day, already summed. */
 @Composable
-private fun OwnerReportRow(
-    dateText: String,
-    gave: String?,
-    took: String?,
-) {
+private fun OwnerReportRow(day: OwnerReportDayItem) {
     Column(
         Modifier
             .fillMaxWidth()
@@ -366,7 +323,7 @@ private fun OwnerReportRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = dateText,
+                text = day.dateLabel,
                 fontSize = 13.sp,
                 color = Color(0xFF6B7280),
                 modifier = Modifier.weight(1.3f),
@@ -375,23 +332,15 @@ private fun OwnerReportRow(
                 Modifier
                     .weight(1f)
                     .fillMaxSize()
-                    .background(if (gave != null) Color(0xFFF0FDF4) else Color.Transparent),
+                    .background(if (day.gaveDisplay != "০.০০") Color(0xFFF0FDF4) else Color.Transparent),
                 contentAlignment = Alignment.Center,
             ) {
-                if (gave != null) {
-                    Text(
-                        text = gave,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color(0xFF108A00),
-                    )
-                } else {
-                    Text(
-                        text = "০.০০",
-                        fontSize = 14.sp,
-                        color = Color(0xFF9CA3AF),
-                    )
-                }
+                Text(
+                    text = day.gaveDisplay,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFF108A00),
+                )
             }
             Box(
                 Modifier
@@ -399,20 +348,12 @@ private fun OwnerReportRow(
                     .fillMaxSize(),
                 contentAlignment = Alignment.CenterEnd,
             ) {
-                if (took != null) {
-                    Text(
-                        text = took,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color(0xFFD32F2F),
-                    )
-                } else {
-                    Text(
-                        text = "০.০০",
-                        fontSize = 14.sp,
-                        color = Color(0xFFD32F2F),
-                    )
-                }
+                Text(
+                    text = day.tookDisplay,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFFD32F2F),
+                )
             }
         }
     }

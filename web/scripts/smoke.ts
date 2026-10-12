@@ -248,6 +248,108 @@ async function main() {
     cashEntriesAfter.json?.items?.length === cashBaseline,
     `${cashEntriesAfter.json?.items?.length} vs ${cashBaseline}`);
 
+  // ---- 5b. cash reports --------------------------------------------------
+  //
+  // The two tabs of ক্যাশ হিসাব, and মালিকের রিপোর্ট behind them. Until now the
+  // client drew these rows as hard-coded zeros, which is indistinguishable from
+  // correct output in a screenshot — so what is pinned here is the arithmetic
+  // the reference app shows, not merely that the routes answer 200.
+  section('Cash reports');
+
+  const dayBefore = await req('GET', '/api/reports/cash?period=day', { token });
+  const ownerBefore = await req('GET', '/api/reports/owner', { token });
+  const rowOf = (rep: any, key: string) =>
+    (rep?.json?.rows || []).find((r: any) => r.key === key);
+  const rawOf = (rep: any, key: string) => rowOf(rep, key)?.amount?.raw ?? 0;
+  const gaveBefore = ownerBefore.json?.totalGave?.raw ?? 0;
+
+  const seedOwner = await req('POST', '/api/cashbox/entries', {
+    token,
+    body: { kind: 'owner_in', amount: 1200, description: 'স্মোক মালিক দিল' },
+  });
+  const seedOwner2 = await req('POST', '/api/cashbox/entries', {
+    token,
+    body: { kind: 'owner_in', amount: 300, description: 'স্মোক মালিক দিল ২' },
+  });
+  const seedSale = await req('POST', '/api/cashbox/entries', {
+    token,
+    body: { kind: 'cash_sale', amount: 500, description: 'স্মোক ক্যাশ বেচা' },
+  });
+  const seedSpend = await req('POST', '/api/cashbox/entries', {
+    token,
+    body: { kind: 'expense', amount: 300, description: 'স্মোক খরচ ২' },
+  });
+  const seedIds: string[] = [seedOwner, seedOwner2, seedSale, seedSpend]
+    .map((r) => r.json?.entry?.id)
+    .filter(Boolean);
+  check('seeded four cash movements', seedIds.length === 4, `got ${seedIds.length}`);
+
+  const dashAfter = await req('GET', '/api/cashbox', { token });
+  const dayAfter = await req('GET', '/api/reports/cash?period=day', { token });
+  const monthAfter = await req('GET', '/api/reports/cash?period=month', { token });
+  const ownerAfter = await req('GET', '/api/reports/owner', { token });
+
+  check('GET /api/reports/cash -> 200', dayAfter.status === 200, `got ${dayAfter.status}`);
+  check('GET /api/reports/owner -> 200', ownerAfter.status === 200, `got ${ownerAfter.status}`);
+  check('day tab lists eight rows', dayAfter.json?.rows?.length === 8,
+    `got ${dayAfter.json?.rows?.length}`);
+  check('month tab lists six rows', monthAfter.json?.rows?.length === 6,
+    `got ${monthAfter.json?.rows?.length}`);
+
+  const dayIn = dayAfter.json?.totalIn?.raw ?? 0;
+  const dayOut = dayAfter.json?.totalOut?.raw ?? 0;
+  const dayBal = dayAfter.json?.balance?.raw ?? NaN;
+  check('day tab reconciles: totalIn - totalOut = balance',
+    Math.abs(dayIn - dayOut - dayBal) < 0.005, `${dayIn} - ${dayOut} = ${dayBal}`);
+
+  const box = dashAfter.json?.currentCash?.raw ?? NaN;
+  check("day tab's balance is the box", Math.abs(dayBal - box) < 0.005, `${dayBal} vs ${box}`);
+
+  const monthBal = monthAfter.json?.balance?.raw ?? NaN;
+  const ownerBal = monthAfter.json?.owner?.balance?.raw ?? NaN;
+  check('month tab splits the box: business + owner = box',
+    Math.abs(monthBal + ownerBal - box) < 0.005, `${monthBal} + ${ownerBal} vs ${box}`);
+
+  check("day's মালিক দিল row carries both deposits",
+    Math.abs(rawOf(dayAfter, 'owner_in') - rawOf(dayBefore, 'owner_in') - 1500) < 0.005,
+    `${rawOf(dayAfter, 'owner_in')} vs ${rawOf(dayBefore, 'owner_in')} + 1500`);
+  check("day's ক্যাশ বেচা row carries the sale",
+    Math.abs(rawOf(dayAfter, 'cash_sale') - rawOf(dayBefore, 'cash_sale') - 500) < 0.005);
+  check("day's খরচ row carries the spend",
+    Math.abs(rawOf(dayAfter, 'expense') - rawOf(dayBefore, 'expense') - 300) < 0.005);
+
+  check('month table carries no owner rows',
+    !(monthAfter.json?.rows || []).some((r: any) => r.key === 'owner_in' || r.key === 'owner_out'));
+  check("month's owner block matches মালিকের রিপোর্ট",
+    Math.abs((monthAfter.json?.owner?.gave?.raw ?? NaN) - (ownerAfter.json?.totalGave?.raw ?? NaN)) < 0.005);
+
+  // Grouping is the point of this report: a day with several owner movements is
+  // one row, not one row per movement. Asserting on the *last* row's total
+  // would not prove it — a book that already had a deposit today folds the new
+  // one into the same row and passes either way — so two deposits are seeded
+  // and the row count is required to grow by at most one.
+  const rowsBefore = ownerBefore.json?.rows?.length ?? 0;
+  const rowsAfter = ownerAfter.json?.rows?.length ?? 0;
+  const labels = (ownerAfter.json?.rows || []).map((r: any) => r.dateLabel);
+  check('মালিকের রিপোর্ট has one row per day',
+    new Set(labels).size === labels.length, labels.join(' | '));
+  check('two deposits on one day fold into a single row',
+    rowsAfter >= rowsBefore && rowsAfter - rowsBefore <= 1, `${rowsBefore} -> ${rowsAfter}`);
+  check('both deposits are counted',
+    Math.abs((ownerAfter.json?.totalGave?.raw ?? 0) - gaveBefore - 1500) < 0.005,
+    `${ownerAfter.json?.totalGave?.raw} vs ${gaveBefore} + 1500`);
+  check('মালিকের রিপোর্ট reconciles: gave - took = balance',
+    Math.abs((ownerAfter.json?.totalGave?.raw ?? 0) - (ownerAfter.json?.totalTook?.raw ?? 0) -
+      (ownerAfter.json?.balance?.raw ?? NaN)) < 0.005);
+
+  for (const id of seedIds) {
+    await req('DELETE', `/api/cashbox/entries/${id}`, { token });
+  }
+  const dashRestored = await req('GET', '/api/cashbox', { token });
+  check('cash reports leave the box as they found it',
+    Math.abs((dashRestored.json?.currentCash?.raw ?? NaN) - (dash.json?.currentCash?.raw ?? NaN)) < 0.005,
+    `${dashRestored.json?.currentCash?.raw} vs ${dash.json?.currentCash?.raw}`);
+
   // ---- 6. per-user isolation --------------------------------------------
   section('Per-user isolation');
   const otherLogin = await req('POST', '/api/auth/register', {

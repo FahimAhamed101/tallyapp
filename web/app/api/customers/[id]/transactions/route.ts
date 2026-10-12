@@ -64,6 +64,7 @@ export const POST = handler(async (req: NextRequest, ctx: Ctx) => {
   const amt = parseAmount(body.amount ?? parsed.data.amount);
   if (!Number.isFinite(amt) || amt <= 0) throw badRequest('সঠিক পরিমাণ দিন');
 
+  const photoUrl = String(parsed.data.photoUrl || '').trim();
   const created = await Transaction.create({
     owner: user._id,
     business: doc.business,
@@ -71,7 +72,9 @@ export const POST = handler(async (req: NextRequest, ctx: Ctx) => {
     kind: resolvedKind,
     amount: amt,
     description: String(parsed.data.description || '').trim(),
-    hasPhoto: !!parsed.data.hasPhoto,
+    hasPhoto: !!parsed.data.hasPhoto || !!photoUrl,
+    photoUrl,
+    photoPublicId: String(parsed.data.photoPublicId || '').trim(),
     date: parsed.data.date,
   });
 

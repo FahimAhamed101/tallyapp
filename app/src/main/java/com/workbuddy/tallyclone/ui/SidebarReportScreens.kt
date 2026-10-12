@@ -26,6 +26,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -49,7 +51,10 @@ import androidx.compose.ui.unit.sp
 import com.workbuddy.tallyclone.data.AppStore
 import com.workbuddy.tallyclone.data.CashboxEntryItem
 import com.workbuddy.tallyclone.data.TransactionDetailItem
+import com.workbuddy.tallyclone.data.toBengaliDigits
 import kotlinx.coroutines.launch
+import java.time.LocalDate
+import java.time.YearMonth
 
 // ---------------------------------------------------------------------------
 // Shared Header & Navigation Components
@@ -111,10 +116,22 @@ fun FilterDateBar(
     showPeriodDropdown: Boolean = true,
     showCheckbox: Boolean = false,
     checkboxLabel: String = "সংক্ষিপ্ত",
+    checked: Boolean = false,
+    onCheckedChange: ((Boolean) -> Unit)? = null,
+    onPeriodSelected: (String) -> Unit = {},
     onPrevDate: () -> Unit = {},
     onNextDate: () -> Unit = {},
 ) {
-    var checked by remember { mutableStateOf(false) }
+    // The checkbox is controlled when a caller wires it and a local toggle when
+    // none does, so the cash report's "বিস্তারিত" — which has no summary view to
+    // switch to — keeps its existing behaviour instead of gaining a fake one.
+    val onCheckedChangeSafe = onCheckedChange
+    var localChecked by remember { mutableStateOf(false) }
+    val isChecked = if (onCheckedChangeSafe == null) localChecked else checked
+    val onCheck: (Boolean) -> Unit = { value ->
+        if (onCheckedChangeSafe == null) localChecked = value else onCheckedChangeSafe(value)
+    }
+    var periodMenuOpen by remember { mutableStateOf(false) }
 
     Row(
         Modifier
@@ -124,26 +141,43 @@ fun FilterDateBar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (showPeriodDropdown) {
-            Row(
-                Modifier
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(Color(0xFFF1F3F5))
-                    .padding(horizontal = 14.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = periodLabel,
-                    fontSize = 13.5.sp,
-                    color = Color(0xFF2B2F33),
-                    fontWeight = FontWeight.Medium,
-                )
-                Spacer(Modifier.width(6.dp))
-                LineIcon(
-                    paths = TallyIcons.ChevronDown,
-                    color = Color(0xFF4B5563),
-                    size = 14.dp,
-                    strokeWidth = 2.4f,
-                )
+            Box {
+                Row(
+                    Modifier
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(Color(0xFFF1F3F5))
+                        .clickable { periodMenuOpen = true }
+                        .padding(horizontal = 14.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = periodLabel,
+                        fontSize = 13.5.sp,
+                        color = Color(0xFF2B2F33),
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    LineIcon(
+                        paths = TallyIcons.ChevronDown,
+                        color = Color(0xFF4B5563),
+                        size = 14.dp,
+                        strokeWidth = 2.4f,
+                    )
+                }
+                DropdownMenu(
+                    expanded = periodMenuOpen,
+                    onDismissRequest = { periodMenuOpen = false },
+                ) {
+                    listOf("day" to "দিন", "month" to "মাস").forEach { (key, label) ->
+                        DropdownMenuItem(
+                            text = { Text(label, fontSize = 14.sp) },
+                            onClick = {
+                                periodMenuOpen = false
+                                onPeriodSelected(key)
+                            },
+                        )
+                    }
+                }
             }
             Spacer(Modifier.width(8.dp))
         }
@@ -204,7 +238,7 @@ fun FilterDateBar(
             Spacer(Modifier.weight(1f))
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.clickable { checked = !checked },
+                modifier = Modifier.clickable { onCheck(!isChecked) },
             ) {
                 Text(
                     text = checkboxLabel,
@@ -213,8 +247,8 @@ fun FilterDateBar(
                 )
                 Spacer(Modifier.width(4.dp))
                 Checkbox(
-                    checked = checked,
-                    onCheckedChange = { checked = it },
+                    checked = isChecked,
+                    onCheckedChange = onCheck,
                     colors = CheckboxDefaults.colors(
                         checkedColor = Color(0xFFBA1A1A),
                         uncheckedColor = Color(0xFF9CA3AF),
@@ -425,6 +459,11 @@ fun SalesPurchaseReportScreen(
     var loading by remember { mutableStateOf(true) }
     var transactions by remember { mutableStateOf<List<TransactionDetailItem>>(emptyList()) }
     var cashboxEntries by remember { mutableStateOf<List<CashboxEntryItem>>(emptyList()) }
+    // What the bar is scoped to. The bar's arrows and period dropdown drive
+    // this, and every list below is filtered through it — the half that was
+    // missing while the date was a hard-coded string and the arrows did nothing.
+    val period = rememberReportPeriod()
+    var concise by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         loading = true
@@ -434,12 +473,35 @@ fun SalesPurchaseReportScreen(
     }
 
     // Filter sales and purchases
-    val saleTx = transactions.filter { it.kind == "sale" }
-    val purchaseTx = transactions.filter { it.kind == "purchase" }
-    val cashSales = cashboxEntries.filter { it.kind == "cash_sale" }
-    val cashPurchases = cashboxEntries.filter { it.kind == "cash_purchase" }
+    val saleTx = transactions.filter { it.kind == "sale" && inSelectedPeriod(it.date, period) }
+    val purchaseTx = transactions.filter { it.kind == "purchase" && inSelectedPeriod(it.date, period) }
+    val cashSales = cashboxEntries.filter { it.kind == "cash_sale" && inSelectedPeriod(it.date, period) }
+    val cashPurchases = cashboxEntries.filter { it.kind == "cash_purchase" && inSelectedPeriod(it.date, period) }
 
     val hasData = saleTx.isNotEmpty() || purchaseTx.isNotEmpty() || cashSales.isNotEmpty() || cashPurchases.isNotEmpty()
+
+    // --- the concise view: one row per day instead of one per entry --------
+    // A hundred-row table is not a report. Rolling the same filtered entries up
+    // by day is what "সংক্ষিপ্ত" means here, and it is derived from the filtered
+    // lists so the bar's period and the summary can never disagree. An entry
+    // whose date cannot be read keeps its own bucket rather than being dropped.
+    val dayRows: List<SalePurchaseDay> = run {
+        val acc = linkedMapOf<LocalDate?, SalePurchaseDay>()
+        fun add(raw: String, label: String, amount: Double, isSale: Boolean) {
+            val key = localDayOf(raw)
+            val prev = acc.getOrPut(key) { SalePurchaseDay(key, label, 0.0, 0.0, 0) }
+            acc[key] = prev.copy(
+                sale = prev.sale + if (isSale) amount else 0.0,
+                purchase = prev.purchase + if (!isSale) amount else 0.0,
+                count = prev.count + 1,
+            )
+        }
+        cashSales.forEach { add(it.date, it.dateDisplay, it.amountRaw, true) }
+        saleTx.forEach { add(it.date, it.dateDisplay, it.amountRaw, true) }
+        cashPurchases.forEach { add(it.date, it.dateDisplay, it.amountRaw, false) }
+        purchaseTx.forEach { add(it.date, it.dateDisplay, it.amountRaw, false) }
+        acc.values.sortedBy { it.day }
+    }
 
     Column(
         Modifier
@@ -448,59 +510,88 @@ fun SalesPurchaseReportScreen(
     ) {
         ReportTopBar(title = "বেচা কেনা হিসাব", onBack = onBack)
         FilterDateBar(
-            periodLabel = "দিন",
-            dateLabel = "০৬ অক্টোবর",
+            periodLabel = period.periodLabel,
+            dateLabel = period.dateLabel,
             showPeriodDropdown = true,
             showCheckbox = true,
             checkboxLabel = "সংক্ষিপ্ত",
+            checked = concise,
+            onCheckedChange = { concise = it },
+            onPeriodSelected = period::selectPeriod,
+            onPrevDate = { period.shift(-1) },
+            onNextDate = { period.shift(1) },
         )
         TableHeaderRow(col1 = "বিবরণ", col2 = "বেচা", col3 = "কেনা")
 
-        if (!hasData) {
-            EmptyReportIllustration(caption = "কোন লেনদেন নেই।")
-        } else {
-            Column(
+        when {
+            loading -> LoadingBox()
+            !hasData -> EmptyReportIllustration(caption = "কোন লেনদেন নেই।")
+            else -> Column(
                 Modifier
                     .weight(1f)
                     .verticalScroll(rememberScrollState()),
             ) {
-                // Show sales entries
-                cashSales.forEach { entry ->
-                    SalePurchaseRow(
-                        title = "ক্যাশ বেচা",
-                        time = entry.dateDisplay.ifBlank { "আজ" },
-                        saleAmount = entry.amountDisplay,
-                        purchaseAmount = null,
-                    )
-                }
-                saleTx.forEach { tx ->
-                    SalePurchaseRow(
-                        title = tx.customerName.ifBlank { "বাকি বেচা" },
-                        time = tx.dateDisplay.ifBlank { "আজ" },
-                        saleAmount = tx.amountDisplay,
-                        purchaseAmount = null,
-                    )
-                }
-                cashPurchases.forEach { entry ->
-                    SalePurchaseRow(
-                        title = "ক্যাশ কেনা",
-                        time = entry.dateDisplay.ifBlank { "আজ" },
-                        saleAmount = null,
-                        purchaseAmount = entry.amountDisplay,
-                    )
-                }
-                purchaseTx.forEach { tx ->
-                    SalePurchaseRow(
-                        title = tx.customerName.ifBlank { "সাপ্লায়ার কেনা" },
-                        time = tx.dateDisplay.ifBlank { "আজ" },
-                        saleAmount = null,
-                        purchaseAmount = tx.amountDisplay,
-                    )
+                if (concise) {
+                    dayRows.forEach { day ->
+                        SalePurchaseRow(
+                            title = day.label.ifBlank { day.day?.let(::dayLabel) ?: "অজানা তারিখ" },
+                            time = "${toBengaliDigits(day.count)} টি লেনদেন",
+                            saleAmount = bengaliAmount(day.sale).takeIf { day.sale > 0.004 },
+                            purchaseAmount = bengaliAmount(day.purchase).takeIf { day.purchase > 0.004 },
+                        )
+                    }
+                } else {
+                    // Show sales entries
+                    cashSales.forEach { entry ->
+                        SalePurchaseRow(
+                            title = "ক্যাশ বেচা",
+                            time = entry.dateDisplay.ifBlank { "আজ" },
+                            saleAmount = entry.amountDisplay,
+                            purchaseAmount = null,
+                        )
+                    }
+                    saleTx.forEach { tx ->
+                        SalePurchaseRow(
+                            title = tx.customerName.ifBlank { "বাকি বেচা" },
+                            time = tx.dateDisplay.ifBlank { "আজ" },
+                            saleAmount = tx.amountDisplay,
+                            purchaseAmount = null,
+                        )
+                    }
+                    cashPurchases.forEach { entry ->
+                        SalePurchaseRow(
+                            title = "ক্যাশ কেনা",
+                            time = entry.dateDisplay.ifBlank { "আজ" },
+                            saleAmount = null,
+                            purchaseAmount = entry.amountDisplay,
+                        )
+                    }
+                    purchaseTx.forEach { tx ->
+                        SalePurchaseRow(
+                            title = tx.customerName.ifBlank { "সাপ্লায়ার কেনা" },
+                            time = tx.dateDisplay.ifBlank { "আজ" },
+                            saleAmount = null,
+                            purchaseAmount = tx.amountDisplay,
+                        )
+                    }
                 }
             }
         }
     }
 }
+
+/**
+ * One day of the concise (সংক্ষিপ্ত) বেচা-কেনা view: the day the entries fall on,
+ * the day as the server writes it, and the day's totals. Kept separate from the
+ * per-entry rows so the two views can never be derived from different lists.
+ */
+private data class SalePurchaseDay(
+    val day: LocalDate?,
+    val label: String,
+    val sale: Double,
+    val purchase: Double,
+    val count: Int,
+)
 
 @Composable
 private fun SalePurchaseRow(
@@ -569,12 +660,17 @@ fun ExpenseReportScreen(
 ) {
     var loading by remember { mutableStateOf(true) }
     var expenses by remember { mutableStateOf<List<CashboxEntryItem>>(emptyList()) }
+    val period = rememberReportPeriod()
 
     LaunchedEffect(Unit) {
         loading = true
         store.loadCashboxEntries("expense").onSuccess { expenses = it }
         loading = false
     }
+
+    // খরচ rows are the same entries the bar pages through, so the bar's period
+    // is applied here rather than being drawn as a label over the whole ledger.
+    val shown = expenses.filter { inSelectedPeriod(it.date, period) }
 
     Column(
         Modifier
@@ -583,22 +679,25 @@ fun ExpenseReportScreen(
     ) {
         ReportTopBar(title = "খরচ", onBack = onBack)
         FilterDateBar(
-            periodLabel = "দিন",
-            dateLabel = "০৬ অক্টোবর",
+            periodLabel = period.periodLabel,
+            dateLabel = period.dateLabel,
             showPeriodDropdown = true,
             showCheckbox = false,
+            onPeriodSelected = period::selectPeriod,
+            onPrevDate = { period.shift(-1) },
+            onNextDate = { period.shift(1) },
         )
         TableHeaderRow(col1 = "বিবরণ", col2 = "দিলাম", col3 = null)
 
-        if (expenses.isEmpty()) {
-            EmptyReportIllustration(caption = "কোন লেনদেন নেই।")
-        } else {
-            Column(
+        when {
+            loading -> LoadingBox()
+            shown.isEmpty() -> EmptyReportIllustration(caption = "কোন লেনদেন নেই।")
+            else -> Column(
                 Modifier
                     .weight(1f)
                     .verticalScroll(rememberScrollState()),
             ) {
-                expenses.forEach { entry ->
+                shown.forEach { entry ->
                     ExpenseRow(
                         title = entry.category.ifBlank { entry.description.ifBlank { "সাধারণ খরচ" } },
                         time = entry.dateDisplay.ifBlank { "আজ" },
@@ -912,9 +1011,16 @@ fun CashAccountReportScreen(
     initialTab: Int = 0,
     onBack: () -> Unit,
     onOpenOwnerReport: (() -> Unit)? = null,
+    onLoadPeriod: (Int, String?) -> Unit = { _, _ -> },
 ) {
     var selectedTab by remember { mutableIntStateOf(initialTab) }
-    val cashbox = store.cashbox
+
+    /**
+     * One payload, two tabs. [CashReportData.period] is what tells them apart,
+     * and matching on it means a stale day payload can never be drawn into the
+     * month table while the month one is still in flight.
+     */
+    val report = store.cashReport
 
     Column(
         Modifier
@@ -934,11 +1040,16 @@ fun CashAccountReportScreen(
                 Modifier
                     .weight(1f)
                     .fillMaxSize()
-                    .clickable { selectedTab = 0 },
+                    .clickable {
+                        selectedTab = 0
+                        // Each tab opens on the current period rather than on
+                        // whatever the other one was last paged to.
+                        onLoadPeriod(0, null)
+                    },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = "ক্যাশবাক্স রিপোর্ট",
+                    text = "ক্যাশবক্স রিপোর্ট",
                     fontSize = 15.sp,
                     fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal,
                     color = if (selectedTab == 0) Color(0xFF1F2937) else Color(0xFF6B7280),
@@ -958,7 +1069,10 @@ fun CashAccountReportScreen(
                 Modifier
                     .weight(1f)
                     .fillMaxSize()
-                    .clickable { selectedTab = 1 },
+                    .clickable {
+                        selectedTab = 1
+                        onLoadPeriod(1, null)
+                    },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
@@ -986,20 +1100,26 @@ fun CashAccountReportScreen(
         )
 
         if (selectedTab == 0) {
-            CashboxReportTab(cashbox = cashbox)
+            CashboxReportTab(
+                report = report?.takeIf { it.period == "day" },
+                onShift = { delta -> onLoadPeriod(0, shiftPeriod("day", report?.periodKey, delta)) },
+            )
         } else {
-            CashReportTab(cashbox = cashbox, onOpenOwnerReport = onOpenOwnerReport)
+            CashReportTab(
+                report = report?.takeIf { it.period == "month" },
+                onShift = { delta -> onLoadPeriod(1, shiftPeriod("month", report?.periodKey, delta)) },
+                onOpenOwnerReport = onOpenOwnerReport,
+            )
         }
     }
 }
 
-/** Tab 1: ক্যাশবাক্স রিপোর্ট (Screenshot 4) */
+/** Tab 1: ক্যাশবাক্স রিপোর্ট — one day, with the opening balance carried in. */
 @Composable
-private fun CashboxReportTab(cashbox: com.workbuddy.tallyclone.data.CashboxDashboard?) {
-    val currentCash = cashbox?.currentCash ?: "৫,০০০.০০"
-    val todayIn = cashbox?.todayIn ?: "৫,০০০.০০"
-    val todayOut = cashbox?.todayOut ?: "০.০০"
-
+private fun CashboxReportTab(
+    report: com.workbuddy.tallyclone.data.CashReportData?,
+    onShift: (Int) -> Unit,
+) {
     Column(
         Modifier
             .fillMaxSize()
@@ -1007,10 +1127,12 @@ private fun CashboxReportTab(cashbox: com.workbuddy.tallyclone.data.CashboxDashb
     ) {
         FilterDateBar(
             periodLabel = "দিন",
-            dateLabel = "০৬ অক্টোবর",
+            dateLabel = report?.periodLabel ?: "…",
             showPeriodDropdown = false,
             showCheckbox = true,
             checkboxLabel = "বিস্তারিত",
+            onPrevDate = { onShift(-1) },
+            onNextDate = { onShift(1) },
         )
         TableHeaderRow(col1 = "বিবরণ", col2 = "পেলাম", col3 = "দিলাম")
 
@@ -1019,14 +1141,7 @@ private fun CashboxReportTab(cashbox: com.workbuddy.tallyclone.data.CashboxDashb
                 .weight(1f)
                 .verticalScroll(rememberScrollState()),
         ) {
-            CashReportTableRow("দিনের শুরুতে ক্যাশ", got = "০.০০", gave = null)
-            CashReportTableRow("ক্যাশ বেচা", got = "০.০০", gave = null)
-            CashReportTableRow("বাকি আদায়", got = todayIn, gave = null)
-            CashReportTableRow("মালিক দিল", got = "০.০০", gave = null)
-            CashReportTableRow("ক্যাশ কেনা", got = null, gave = "০.০০")
-            CashReportTableRow("পেমেন্ট দেয়া", got = null, gave = "০.০০")
-            CashReportTableRow("খরচ", got = null, gave = "০.০০")
-            CashReportTableRow("মালিক নিল", got = null, gave = "০.০০")
+            report?.rows?.forEach { CashReportTableRow(it) }
 
             Spacer(Modifier.height(12.dp))
 
@@ -1055,7 +1170,7 @@ private fun CashboxReportTab(cashbox: com.workbuddy.tallyclone.data.CashboxDashb
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = todayIn,
+                        text = report?.totalIn ?: "০.০০",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF108A00),
@@ -1068,7 +1183,7 @@ private fun CashboxReportTab(cashbox: com.workbuddy.tallyclone.data.CashboxDashb
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = todayOut,
+                        text = report?.totalOut ?: "০.০০",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFFD32F2F),
@@ -1097,10 +1212,12 @@ private fun CashboxReportTab(cashbox: com.workbuddy.tallyclone.data.CashboxDashb
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    text = currentCash,
+                    text = report?.balance ?: "০.০০",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1F2937),
+                    // The day tab's balance *is* the drawer, so a negative one is
+                    // a real overdraft and has to read as one.
+                    color = if (report?.balanceNegative == true) Color(0xFFD32F2F) else Color(0xFF1F2937),
                     textAlign = TextAlign.End,
                     modifier = Modifier.weight(1f),
                 )
@@ -1123,7 +1240,7 @@ private fun CashboxReportTab(cashbox: com.workbuddy.tallyclone.data.CashboxDashb
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = "ক্যাশবাক্স মিলাই",
+                    text = "ক্যাশবক্স মিলাই",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
@@ -1134,16 +1251,13 @@ private fun CashboxReportTab(cashbox: com.workbuddy.tallyclone.data.CashboxDashb
     }
 }
 
-/** Tab 2: ক্যাশ রিপোর্ট (Screenshot 5) */
+/** Tab 2: ক্যাশ রিপোর্ট — one month, business movements only. */
 @Composable
 private fun CashReportTab(
-    cashbox: com.workbuddy.tallyclone.data.CashboxDashboard?,
+    report: com.workbuddy.tallyclone.data.CashReportData?,
+    onShift: (Int) -> Unit,
     onOpenOwnerReport: (() -> Unit)? = null,
 ) {
-    val currentCash = cashbox?.currentCash ?: "৫,০০০.০০"
-    val todayIn = cashbox?.todayIn ?: "৫,০০০.০০"
-    val todayOut = cashbox?.todayOut ?: "০.০০"
-
     Column(
         Modifier
             .fillMaxSize()
@@ -1151,9 +1265,11 @@ private fun CashReportTab(
     ) {
         FilterDateBar(
             periodLabel = "মাস",
-            dateLabel = "অক্টোবর",
+            dateLabel = report?.periodLabel ?: "…",
             showPeriodDropdown = true,
             showCheckbox = false,
+            onPrevDate = { onShift(-1) },
+            onNextDate = { onShift(1) },
         )
         TableHeaderRow(col1 = "বিবরণ", col2 = "পেলাম", col3 = "দিলাম")
 
@@ -1162,12 +1278,7 @@ private fun CashReportTab(
                 .weight(1f)
                 .verticalScroll(rememberScrollState()),
         ) {
-            CashReportTableRow("মাসের শুরুতে ক্যাশ", got = "০.০০", gave = null)
-            CashReportTableRow("ক্যাশ বেচা", got = "০.০০", gave = null)
-            CashReportTableRow("বাকি আদায়", got = todayIn, gave = null)
-            CashReportTableRow("ক্যাশ কেনা", got = null, gave = "০.০০")
-            CashReportTableRow("পেমেন্ট দেয়া", got = null, gave = "০.০০")
-            CashReportTableRow("খরচ", got = null, gave = "০.০০")
+            report?.rows?.forEach { CashReportTableRow(it) }
 
             Spacer(Modifier.height(12.dp))
 
@@ -1196,7 +1307,7 @@ private fun CashReportTab(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = todayIn,
+                        text = report?.totalIn ?: "০.০০",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF108A00),
@@ -1209,7 +1320,7 @@ private fun CashReportTab(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = todayOut,
+                        text = report?.totalOut ?: "০.০০",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFFD32F2F),
@@ -1238,10 +1349,12 @@ private fun CashReportTab(
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    text = currentCash,
+                    text = report?.balance ?: "০.০০",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF108A00),
+                    // The month table leaves the owner out on purpose, so this is
+                    // the business half of the drawer and it can go either way.
+                    color = if (report?.balanceNegative == true) Color(0xFFD32F2F) else Color(0xFF108A00),
                     textAlign = TextAlign.End,
                     modifier = Modifier.weight(1f),
                 )
@@ -1272,7 +1385,7 @@ private fun CashReportTab(
                             modifier = Modifier.weight(1f),
                         )
                         Text(
-                            text = "০.০০",
+                            text = report?.owner?.gaveDisplay ?: "০.০০",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Color(0xFF108A00),
@@ -1290,7 +1403,7 @@ private fun CashReportTab(
                             modifier = Modifier.weight(1f),
                         )
                         Text(
-                            text = "০.০০",
+                            text = report?.owner?.tookDisplay ?: "০.০০",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Color(0xFFD32F2F),
@@ -1316,10 +1429,14 @@ private fun CashReportTab(
                             modifier = Modifier.weight(1f),
                         )
                         Text(
-                            text = "০.০০",
+                            text = report?.owner?.balanceDisplay ?: "০.০০",
                             fontSize = 14.5.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF108A00),
+                            color = if (report?.owner?.balanceNegative == true) {
+                                Color(0xFFD32F2F)
+                            } else {
+                                Color(0xFF108A00)
+                            },
                         )
                     }
                 }
@@ -1327,6 +1444,43 @@ private fun CashReportTab(
             Spacer(Modifier.height(24.dp))
         }
     }
+}
+
+/**
+ * The period [delta] steps from [key], in the same 'YYYY-MM-DD' / 'YYYY-MM'
+ * shape the server uses for `periodKey`.
+ *
+ * Real date arithmetic rather than string surgery, so stepping back from
+ * ১ জানুয়ারি lands in the previous December instead of on day zero. A null
+ * [key] means the screen has no payload yet; null is then passed straight back,
+ * which the server reads as "the current period".
+ */
+internal fun shiftPeriod(period: String, key: String?, delta: Int): String? {
+    if (key.isNullOrBlank()) return null
+    return runCatching {
+        if (period == "day") {
+            LocalDate.parse(key).plusDays(delta.toLong()).toString()
+        } else {
+            YearMonth.parse(key).plusMonths(delta.toLong()).toString()
+        }
+    }.getOrNull()
+}
+
+/**
+ * One row of the server's table.
+ *
+ * The payload decides which column an amount belongs in. That split is a rule
+ * about cash — money in versus money out — not a layout choice, and the two
+ * tabs disagree about it (মালিক দিল is a পেলাম row on one and part of the
+ * owner's block on the other), so it is not re-derived here.
+ */
+@Composable
+private fun CashReportTableRow(row: com.workbuddy.tallyclone.data.CashReportRowItem) {
+    CashReportTableRow(
+        label = row.label,
+        got = if (row.income) row.amountDisplay else null,
+        gave = if (!row.income) row.amountDisplay else null,
+    )
 }
 
 @Composable

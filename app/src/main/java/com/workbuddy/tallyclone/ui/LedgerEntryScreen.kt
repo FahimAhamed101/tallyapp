@@ -73,6 +73,9 @@ fun LedgerEntryScreen(
     // posted, so the label can never disagree with the stored date.
     var entryDate by remember { mutableStateOf(Date()) }
     var showDatePicker by remember { mutableStateOf(false) }
+    // ছবি pill: the picked photo uploads immediately (the Cloudinary secret
+    // stays server-side) and its URL rides along with the entry on নিশ্চিত.
+    val photo = rememberPhotoAttach(store)
 
     LaunchedEffect(customerId) {
         loading = true
@@ -80,7 +83,7 @@ fun LedgerEntryScreen(
         loading = false
     }
 
-    val canSubmit = (gave.isNotBlank() || got.isNotBlank()) && !submitting
+    val canSubmit = (gave.isNotBlank() || got.isNotBlank()) && !submitting && !photo.uploading
 
     fun submit() {
         if (!canSubmit) return
@@ -89,10 +92,26 @@ fun LedgerEntryScreen(
             // The reference form has two boxes; post them one after the other.
             var ok = true
             if (gave.isNotBlank()) {
-                ok = store.addTransaction(customerId, "gave", gave.trim(), description.trim(), entryDate).isSuccess && ok
+                ok = store.addTransaction(
+                    customerId = customerId,
+                    box = "gave",
+                    amount = gave.trim(),
+                    description = description.trim(),
+                    date = entryDate,
+                    photoUrl = photo.photoUrl.takeIf { it.isNotBlank() },
+                    photoPublicId = photo.photoPublicId.takeIf { it.isNotBlank() },
+                ).isSuccess && ok
             }
             if (got.isNotBlank()) {
-                ok = store.addTransaction(customerId, "got", got.trim(), description.trim(), entryDate).isSuccess && ok
+                ok = store.addTransaction(
+                    customerId = customerId,
+                    box = "got",
+                    amount = got.trim(),
+                    description = description.trim(),
+                    date = entryDate,
+                    photoUrl = photo.photoUrl.takeIf { it.isNotBlank() },
+                    photoPublicId = photo.photoPublicId.takeIf { it.isNotBlank() },
+                ).isSuccess && ok
             }
             ledger = store.loadLedger(customerId).getOrNull()
             submitting = false
@@ -100,6 +119,7 @@ fun LedgerEntryScreen(
                 gave = ""
                 got = ""
                 description = ""
+                photo.clear()
                 onBack()
             }
         }
@@ -233,6 +253,8 @@ fun LedgerEntryScreen(
                 onValueChange = { description = it },
                 placeholder = "বিবরণ",
                 icon = TallyIcons.NoteEdit,
+                singleLine = false,
+                minHeight = 88.dp,
             )
 
             Spacer(Modifier.height(14.dp))
@@ -248,13 +270,16 @@ fun LedgerEntryScreen(
                     onClick = { showDatePicker = true },
                 )
                 Spacer(Modifier.weight(1f))
-                PillButton(
-                    label = "ছবি",
-                    background = TallyColors.SoftPill,
-                    textColor = TallyColors.TextPrimary,
-                    icon = TallyIcons.Camera,
-                    bold = false,
-                    onClick = {},
+                PhotoPill(attach = photo)
+            }
+
+            val photoError = photo.error
+            if (photoError != null) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = photoError,
+                    fontSize = 12.sp,
+                    color = TallyColors.CtaRed,
                 )
             }
 
@@ -303,6 +328,10 @@ fun LedgerEntryScreen(
             },
         )
     }
+
+    // ছবি source sheet: camera / gallery / remove. Lives at the root so the
+    // scrim covers the whole screen, the same way the date picker does.
+    PhotoAttachSheet(photo)
 }
 
 @Composable
@@ -340,7 +369,6 @@ private fun LedgerRow(entry: LedgerEntryItem) {
                     .joinToString(" · "),
                 fontSize = 12.sp,
                 color = TallyColors.TextSecondary,
-                maxLines = 1,
             )
         }
         Text(

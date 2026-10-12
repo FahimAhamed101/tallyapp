@@ -18,6 +18,9 @@ const CashboxEntrySchema = new Schema(
     description: { type: String, default: '', trim: true },
     category: { type: String, default: '', trim: true },
     hasPhoto: { type: Boolean, default: false },
+    /** Cloudinary asset for the ছবি pill ('' when no photo is attached). */
+    photoUrl: { type: String, default: '' },
+    photoPublicId: { type: String, default: '' },
     date: { type: Date, default: Date.now, index: true },
   },
   { timestamps: true },
@@ -43,8 +46,8 @@ const FLOW: Record<CashboxKind, number> = {
 
 /** The five rows the ক্যাশবক্স screen renders, in the reference app's order. */
 const ROWS: { key: CashboxKind; label: string; income: boolean }[] = [
-  { key: 'cash_sale', label: 'কাশ বেচা', income: true },
-  { key: 'cash_purchase', label: 'কাশ কেনা', income: false },
+  { key: 'cash_sale', label: 'ক্যাশ বেচা', income: true },
+  { key: 'cash_purchase', label: 'ক্যাশ কেনা', income: false },
   { key: 'expense', label: 'খরচ', income: false },
   { key: 'owner_in', label: 'মালিক দিল', income: true },
   { key: 'owner_out', label: 'মালিক নিল', income: false },

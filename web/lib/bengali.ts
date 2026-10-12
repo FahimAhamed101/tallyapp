@@ -67,6 +67,36 @@ export function money(n: number | null | undefined): { raw: number; display: str
   return { raw: Number(n || 0), display: amount(n) };
 }
 
+/**
+ * "০৭ অক্টোবর, ২০২৬" — the মালিকের রিপোর্ট row label.
+ *
+ * Distinct from [dateBn], which trims the year to two digits for the date
+ * pills. A report row is a permanent record, so it carries the full year.
+ */
+export function dateFullBn(date: Date | string): string {
+  const d = new Date(date);
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${toBn(day)} ${MONTHS[d.getMonth()]}, ${toBn(d.getFullYear())}`;
+}
+
+/**
+ * A balance that can go either way, so the sign is part of the string.
+ *
+ * [amount] deliberately drops the sign — every row it formats is a magnitude
+ * ("দিলাম ৫০০.০০"), never a negative. A balance is different: ৮০০ পেলাম against
+ * ১,৩১০ দিলাম is −৫১০, and rendering that as "৫১০.০০" in green reads as money
+ * in the drawer that is not there.
+ */
+export function signedMoney(n: number | null | undefined): {
+  raw: number;
+  display: string;
+  negative: boolean;
+} {
+  const raw = Number(n || 0);
+  const negative = raw < -0.004;
+  return { raw, display: `${negative ? '-' : ''}${amount(raw)}`, negative };
+}
+
 /** "টালিখাতা" — initials for an avatar badge, matching the customer rule. */
 export function initialsFor(name: string | null | undefined): string {
   const parts = String(name || '').trim().split(/\s+/).filter(Boolean);

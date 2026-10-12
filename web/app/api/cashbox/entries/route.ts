@@ -42,6 +42,7 @@ export const POST = handler(async (req: NextRequest) => {
   const amt = parseAmount(body.amount ?? parsed.data.amount);
   if (!Number.isFinite(amt) || amt <= 0) throw badRequest('সঠিক পরিমাণ দিন');
 
+  const photoUrl = String(parsed.data.photoUrl || '').trim();
   const created = await CashboxEntry.create({
     owner: user._id,
     business: business._id,
@@ -49,7 +50,9 @@ export const POST = handler(async (req: NextRequest) => {
     amount: amt,
     description: String(parsed.data.description || '').trim(),
     category: String(parsed.data.category || '').trim(),
-    hasPhoto: !!parsed.data.hasPhoto,
+    hasPhoto: !!parsed.data.hasPhoto || !!photoUrl,
+    photoUrl,
+    photoPublicId: String(parsed.data.photoPublicId || '').trim(),
     date: parsed.data.date,
   });
 

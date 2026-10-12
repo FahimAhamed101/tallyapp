@@ -466,6 +466,24 @@ export const ENDPOINTS: EndpointDef[] = [
     params: 'id',
     returns: '{ ok, deletedId, dashboard }',
   },
+  {
+    method: 'GET',
+    path: '/api/reports/cash?period=day',
+    auth: 'session',
+    group: 'cashbox',
+    summary: 'ক্যাশ হিসাব — both tabs, opening balance carried in',
+    params: 'period, key',
+    returns: '{ period, rows, totalIn, totalOut, balance, owner }',
+  },
+  {
+    method: 'GET',
+    path: '/api/reports/owner?key=2026-10',
+    auth: 'session',
+    group: 'cashbox',
+    summary: 'মালিকের রিপোর্ট — owner movements grouped by day',
+    params: 'key',
+    returns: '{ rows, totalGave, totalTook, balance }',
+  },
 
   // ---- admin --------------------------------------------------------------
   {

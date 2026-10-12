@@ -157,6 +157,14 @@ data class CashboxRowItem(
 data class CashboxDashboard(
     val todaySale: String,
     val currentCash: String,
+    /**
+     * বর্তমান ক্যাশ as a number, alongside its formatted twin.
+     *
+     * The cash forms have to answer "is this withdrawal more than the drawer
+     * holds?" before they let it through, and comparing Bengali display strings
+     * is not a way to do arithmetic.
+     */
+    val currentCashRaw: Double,
     val todayIn: String,
     val todayOut: String,
     val receivable: String,
@@ -167,9 +175,13 @@ data class CashboxDashboard(
         private fun money(o: JSONObject?, key: String) =
             o?.optJSONObject(key)?.optString("display") ?: "০.০০"
 
+        private fun raw(o: JSONObject?, key: String) =
+            o?.optJSONObject(key)?.optDouble("raw", 0.0) ?: 0.0
+
         fun from(o: JSONObject) = CashboxDashboard(
             todaySale = money(o, "todaySale"),
             currentCash = money(o, "currentCash"),
+            currentCashRaw = raw(o, "currentCash"),
             todayIn = money(o, "todayIn"),
             todayOut = money(o, "todayOut"),
             receivable = money(o, "receivable"),
@@ -178,6 +190,137 @@ data class CashboxDashboard(
         )
     }
 }
+
+// ---- ক্যাশ হিসাব / মালিকের রিপোর্ট ----------------------------------------
+
+/**
+ * One row of the ক্যাশ হিসাব table.
+ *
+ * The server decides which column a row belongs in ([income]) and hands over a
+ * formatted amount, because the same row reads "পেলাম" on one tab and "দিলাম"
+ * on the other and the split must not drift between client and server.
+ */
+data class CashReportRowItem(
+    val key: String,
+    val label: String,
+    val income: Boolean,
+    val amountDisplay: String,
+) {
+    companion object {
+        fun from(o: JSONObject) = CashReportRowItem(
+            key = o.optString("key"),
+            label = o.optString("label"),
+            income = o.optString("tone") == "in",
+            amountDisplay = o.optJSONObject("amount")?.optString("display") ?: "০.০০",
+        )
+    }
+}
+
+/** The মালিক দিল / মালিক নিল / মালিকের ব্যালেন্স block under the month table. */
+data class OwnerBlock(
+    val gaveDisplay: String,
+    val tookDisplay: String,
+    val balanceDisplay: String,
+    val balanceNegative: Boolean,
+) {
+    companion object {
+        fun from(o: JSONObject?) = OwnerBlock(
+            gaveDisplay = o?.optJSONObject("gave")?.optString("display") ?: "০.০০",
+            tookDisplay = o?.optJSONObject("took")?.optString("display") ?: "০.০০",
+            balanceDisplay = o?.optJSONObject("balance")?.optString("display") ?: "০.০০",
+            balanceNegative = o?.optJSONObject("balance")?.optBoolean("negative", false) ?: false,
+        )
+    }
+}
+
+data class CashReportData(
+    val period: String,
+    val periodKey: String,
+    val periodLabel: String,
+    val canNext: Boolean,
+    val rows: List<CashReportRowItem>,
+    val totalIn: String,
+    val totalOut: String,
+    val balance: String,
+    val balanceNegative: Boolean,
+    val owner: OwnerBlock,
+) {
+    companion object {
+        fun from(o: JSONObject) = CashReportData(
+            period = o.optString("period", "day"),
+            periodKey = o.optString("periodKey"),
+            periodLabel = o.optString("periodLabel"),
+            canNext = o.optBoolean("canNext", false),
+            rows = o.optJSONArray("rows").mapObjects { CashReportRowItem.from(it) },
+            totalIn = o.optJSONObject("totalIn")?.optString("display") ?: "০.০০",
+            totalOut = o.optJSONObject("totalOut")?.optString("display") ?: "০.০০",
+            balance = o.optJSONObject("balance")?.optString("display") ?: "০.০০",
+            balanceNegative = o.optJSONObject("balance")?.optBoolean("negative", false) ?: false,
+            owner = OwnerBlock.from(o.optJSONObject("owner")),
+        )
+    }
+}
+
+/** One day of মালিকের রিপোর্ট — the day's deposits and withdrawals, summed. */
+data class OwnerReportDayItem(
+    val dateLabel: String,
+    val gaveDisplay: String,
+    val tookDisplay: String,
+) {
+    companion object {
+        fun from(o: JSONObject) = OwnerReportDayItem(
+            dateLabel = o.optString("dateLabel"),
+            gaveDisplay = o.optJSONObject("gave")?.optString("display") ?: "০.০০",
+            tookDisplay = o.optJSONObject("took")?.optString("display") ?: "০.০০",
+        )
+    }
+}
+
+data class OwnerReportData(
+    val periodKey: String,
+    val periodLabel: String,
+    val canNext: Boolean,
+    val rows: List<OwnerReportDayItem>,
+    val totalGave: String,
+    val totalTook: String,
+    val balance: String,
+    val balanceNegative: Boolean,
+) {
+    companion object {
+        fun from(o: JSONObject) = OwnerReportData(
+            periodKey = o.optString("periodKey"),
+            periodLabel = o.optString("periodLabel"),
+            canNext = o.optBoolean("canNext", false),
+            rows = o.optJSONArray("rows").mapObjects { OwnerReportDayItem.from(it) },
+            totalGave = o.optJSONObject("totalGave")?.optString("display") ?: "০.০০",
+            totalTook = o.optJSONObject("totalTook")?.optString("display") ?: "০.০০",
+            balance = o.optJSONObject("balance")?.optString("display") ?: "০.০০",
+            balanceNegative = o.optJSONObject("balance")?.optBoolean("negative", false) ?: false,
+        )
+    }
+}
+
+/**
+ * What the confirmation screen shows after a cash entry lands.
+ *
+ * Assembled on this side rather than sent whole: the server's POST already
+ * answers with the created entry and the refreshed dashboard, and the one piece
+ * it cannot know is the drawer's balance *before* the write — by the time it
+ * replies, that number is gone. So it is captured on the way in.
+ */
+data class CashEntryReceipt(
+    val kind: String,
+    val label: String,
+    val amountDisplay: String,
+    val beforeCash: String,
+    val afterCash: String,
+)
+
+/**
+ * Money toward the drawer. Mirrors the server's `FLOW`, and only decides which
+ * colour the receipt paints its amount in.
+ */
+fun cashEntryInflow(kind: String): Boolean = kind == "cash_sale" || kind == "owner_in"
 
 data class WalletServiceItem(
     val key: String,
@@ -262,6 +405,8 @@ data class LedgerEntryItem(
     val amountDisplay: String,
     val dateDisplay: String,
     val description: String,
+    /** ছবি pill: Cloudinary URL ("" when none). */
+    val photoUrl: String,
 ) {
     companion object {
         fun from(o: JSONObject) = LedgerEntryItem(
@@ -271,6 +416,7 @@ data class LedgerEntryItem(
             amountDisplay = o.optString("amountDisplay", "০.০০"),
             dateDisplay = o.optString("dateDisplay", ""),
             description = o.optString("description", ""),
+            photoUrl = o.optString("photoUrl", ""),
         )
     }
 }
@@ -369,6 +515,10 @@ data class TransactionDetailItem(
     val amountDisplay: String,
     val amountRaw: Double,
     val dateDisplay: String,
+    /** Machine date ("2026-10-04T21:48:58.397Z") — what the report filters on. */
+    val date: String,
+    /** ছবি pill: Cloudinary URL ("" when none). */
+    val photoUrl: String,
     val customerName: String,
     val customerPhone: String,
     val customerType: String,
@@ -383,6 +533,8 @@ data class TransactionDetailItem(
             amountDisplay = o.optString("amountDisplay", "০.০০"),
             amountRaw = o.optDouble("amountRaw", 0.0),
             dateDisplay = o.optString("dateDisplay", ""),
+            date = o.optString("date", ""),
+            photoUrl = o.optString("photoUrl", ""),
             customerName = o.optString("customerName", ""),
             customerPhone = o.optString("customerPhone", ""),
             customerType = o.optString("customerType", "customer"),
@@ -399,6 +551,10 @@ data class CashboxEntryItem(
     val description: String,
     val category: String,
     val dateDisplay: String,
+    /** Machine date ("2026-10-03T23:48:58.397Z") — what the report filters on. */
+    val date: String,
+    /** ছবি pill: Cloudinary URL ("" when none). */
+    val photoUrl: String,
 ) {
     companion object {
         fun from(o: JSONObject) = CashboxEntryItem(
@@ -410,6 +566,8 @@ data class CashboxEntryItem(
             description = o.optString("description", ""),
             category = o.optString("category", ""),
             dateDisplay = o.optString("dateDisplay", ""),
+            date = o.optString("date", ""),
+            photoUrl = o.optString("photoUrl", ""),
         )
     }
 }

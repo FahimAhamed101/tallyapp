@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.sp
 import com.workbuddy.tallyclone.data.AppStore
 import com.workbuddy.tallyclone.data.CustomerItem
 import com.workbuddy.tallyclone.data.ImagePicking
+import com.workbuddy.tallyclone.data.PhoneBook
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -125,6 +126,23 @@ fun AddCustomerScreen(
     val galleryLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent(),
     ) { uri -> if (uri != null) upload(uri) { } }
+
+    // ফোনবুক থেকে যোগ করি — PickContact returns a per-URI read grant, so the
+    // phonebook button works without the READ_CONTACTS permission.
+    val contactLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickContact(),
+    ) { uri ->
+        if (uri != null) {
+            val picked = PhoneBook.readContact(context.contentResolver, uri)
+            if (picked != null) {
+                name = picked.name
+                phone = picked.phone
+                localError = null
+            } else {
+                localError = "কন্টাক্টে নাম ও নম্বর পাওয়া যায়নি"
+            }
+        }
+    }
 
     val canSubmit = name.isNotBlank() && !submitting && !uploading
 
@@ -257,7 +275,7 @@ fun AddCustomerScreen(
                         .height(48.dp)
                         .clip(RoundedCornerShape(50))
                         .background(TallyColors.FieldGray)
-                        .clickable { }
+                        .clickable { contactLauncher.launch(null) }
                         .padding(horizontal = 16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center,
@@ -294,6 +312,8 @@ fun AddCustomerScreen(
                     onValueChange = { note = it },
                     placeholder = "বিবরণ",
                     icon = TallyIcons.NoteEdit,
+                    singleLine = false,
+                    minHeight = 88.dp,
                 )
 
                 val message = localError ?: store.error
@@ -382,7 +402,7 @@ private fun PhotoChip(
 
 /** Bottom sheet offering the two photo sources (plus remove, when relevant). */
 @Composable
-private fun PhotoSourceSheet(
+fun PhotoSourceSheet(
     hasPhoto: Boolean,
     onCamera: () -> Unit,
     onGallery: () -> Unit,

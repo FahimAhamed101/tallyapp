@@ -24,6 +24,9 @@ const TransactionSchema = new Schema(
     amount: { type: Number, required: true, min: 0 },
     description: { type: String, default: '', trim: true },
     hasPhoto: { type: Boolean, default: false },
+    /** Cloudinary asset for the ছবি pill ('' when no photo is attached). */
+    photoUrl: { type: String, default: '' },
+    photoPublicId: { type: String, default: '' },
     date: { type: Date, default: Date.now, index: true },
   },
   { timestamps: true },

@@ -3,7 +3,8 @@ import Wallet from './models/Wallet';
 import Customer from './models/Customer';
 import Transaction from './models/Transaction';
 import CashboxEntry, { type CashboxKind } from './models/CashboxEntry';
-import { amount, dateBn, money, relativeBn, toBn, initialsFor } from './bengali';
+import { amount, dateBn, money, relativeBn, signedMoney, toBn, initialsFor } from './bengali';
+import { CASH_DIR, cashMovements, type CashMoveKey } from './cash-report';
 import { balancesFor, type OwnerId } from './ledger';
 import { type Scope, scopeFilter } from './scope';
 import { summary, type Summary } from './summary';
@@ -189,8 +190,8 @@ export async function getSummary(scope: Scope): Promise<SummaryView> {
 // ---- cashbox --------------------------------------------------------------
 
 export const CASHBOX_KIND_TITLE: Record<CashboxKind, string> = {
-  cash_sale: 'কাশ বেচা',
-  cash_purchase: 'কাশ কেনা',
+  cash_sale: 'ক্যাশ বেচা',
+  cash_purchase: 'ক্যাশ কেনা',
   expense: 'খরচ',
   owner_in: 'মালিক দিল',
   owner_out: 'মালিক নিল',
@@ -211,6 +212,9 @@ export interface CashboxEntryView {
   description: string;
   category: string;
   dateDisplay: string;
+  /** ছবি pill: Cloudinary URL ('' when none). */
+  photoUrl: string;
+  photoPublicId: string;
   date: Date;
 }
 
@@ -221,6 +225,8 @@ export function cashboxEntryView(e: {
   description?: string;
   category?: string;
   date: Date;
+  photoUrl?: string;
+  photoPublicId?: string;
 }): CashboxEntryView {
   return {
     id: String(e._id),
@@ -231,6 +237,8 @@ export function cashboxEntryView(e: {
     description: e.description || '',
     category: e.category || '',
     dateDisplay: dateBn(e.date),
+    photoUrl: e.photoUrl || '',
+    photoPublicId: e.photoPublicId || '',
     date: e.date,
   };
 }
@@ -252,46 +260,55 @@ export interface CashboxDashboard {
   }[];
 }
 
-/** Everything the ক্যাশবক্স dashboard needs, derived from one book's entries. */
+/**
+ * Everything the ক্যাশবক্স dashboard needs, derived from one book's cash book.
+ *
+ * `rows` are **today's** totals, not the book's. The five rows sit under a
+ * header that reads আজকের বেচা / আজ পেলাম / আজ দিলাম, and the reference's own
+ * figures make the scope unambiguous: on a day whose month-to-date ক্যাশ বেচা
+ * was ১১,৮৮০ the row read ১১,০৮০ — the day's share of it. Summing all time
+ * made the rows disagree with the header above them.
+ */
 export async function cashboxDashboard(scope: Scope): Promise<CashboxDashboard> {
-  const entries = await CashboxEntry.find(scopeFilter(scope)).lean();
-  const flow = CashboxEntry.FLOW;
-  const today = startOfToday();
+  const moves = await cashMovements(scope);
+  const today = startOfToday().getTime();
 
   let currentCash = 0;
   let todayIn = 0;
   let todayOut = 0;
   let todaySale = 0;
-  const totals: Partial<Record<CashboxKind, number>> = {};
+  const todayTotals: Partial<Record<CashMoveKey, number>> = {};
 
-  entries.forEach((e) => {
-    const dir = flow[e.kind as CashboxKind] || 0;
-    currentCash += dir * e.amount;
-    totals[e.kind as CashboxKind] = (totals[e.kind as CashboxKind] || 0) + e.amount;
+  moves.forEach((m) => {
+    const dir = CASH_DIR[m.key];
+    currentCash += dir * m.amount;
 
-    if (new Date(e.date) >= today) {
-      if (dir > 0) todayIn += e.amount;
-      else todayOut += e.amount;
-      if (e.kind === 'cash_sale') todaySale += e.amount;
-    }
+    if (m.date.getTime() < today) return;
+    if (dir > 0) todayIn += m.amount;
+    else todayOut += m.amount;
+    if (m.key === 'cash_sale') todaySale += m.amount;
+    todayTotals[m.key] = (todayTotals[m.key] || 0) + m.amount;
   });
 
   const s = await summary(scope);
 
   return {
     todaySale: money(todaySale),
-    currentCash: money(currentCash),
+    // Signed, unlike every other figure here: those are magnitudes by
+    // construction, but a drawer that has been over-drawn is genuinely
+    // negative and "১০৯.৫০" would read as money that is in it.
+    currentCash: signedMoney(currentCash),
     todayIn: money(todayIn),
     todayOut: money(todayOut),
     receivable: money(s.receivable),
     payable: money(s.payable),
-    entryCount: entries.length,
+    entryCount: moves.length,
     rows: CashboxEntry.ROWS.map((r) => ({
       key: r.key,
       label: r.label,
       income: r.income,
-      amountRaw: totals[r.key] || 0,
-      amountDisplay: amount(totals[r.key] || 0),
+      amountRaw: todayTotals[r.key] || 0,
+      amountDisplay: amount(todayTotals[r.key] || 0),
     })),
   };
 }
@@ -326,6 +343,9 @@ export interface LedgerEntryView {
   dateDisplay: string;
   relative: string;
   hasPhoto: boolean;
+  /** ছবি pill: Cloudinary URL ('' when none). */
+  photoUrl: string;
+  photoPublicId: string;
   date: Date;
 }
 
@@ -336,6 +356,8 @@ export function entryView(t: {
   amount: number;
   date: Date;
   hasPhoto?: boolean;
+  photoUrl?: string;
+  photoPublicId?: string;
 }): LedgerEntryView {
   return {
     id: String(t._id),
@@ -348,6 +370,8 @@ export function entryView(t: {
     dateDisplay: dateBn(t.date),
     relative: relativeBn(t.date),
     hasPhoto: !!t.hasPhoto,
+    photoUrl: t.photoUrl || '',
+    photoPublicId: t.photoPublicId || '',
     date: t.date,
   };
 }
