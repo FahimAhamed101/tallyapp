@@ -1,5 +1,11 @@
 import Profile from './models/Profile';
 import Wallet from './models/Wallet';
+import Deposit, {
+  DEPOSIT_PAYMENT,
+  DEPOSIT_STATUS_LABEL,
+  type DepositDoc,
+  type DepositStatus,
+} from './models/Deposit';
 import Customer from './models/Customer';
 import Transaction from './models/Transaction';
 import CashboxEntry, { type CashboxKind } from './models/CashboxEntry';
@@ -79,12 +85,77 @@ export async function getProfile(user: UserLike): Promise<ProfileView> {
   };
 }
 
+export interface DepositView {
+  id: string;
+  amount: number;
+  amountDisplay: string;
+  senderNumber: string;
+  senderNumberDisplay: string;
+  trxId: string;
+  status: DepositStatus;
+  statusLabel: string;
+  note: string;
+  createdAt: Date;
+  reviewedAt: Date | null;
+}
+
+/** One deposit row, formatted the way both the app and the panel show it. */
+export function depositView(doc: DepositDoc & { _id: unknown }): DepositView {
+  const status = (doc.status || 'pending') as DepositStatus;
+  return {
+    id: String(doc._id),
+    amount: doc.amount,
+    amountDisplay: money(doc.amount).display,
+    senderNumber: doc.senderNumber,
+    senderNumberDisplay: toBn(doc.senderNumber),
+    trxId: doc.trxId,
+    status,
+    statusLabel: DEPOSIT_STATUS_LABEL[status],
+    note: doc.note || '',
+    createdAt: doc.createdAt as Date,
+    reviewedAt: (doc.reviewedAt as Date | null) ?? null,
+  };
+}
+
+/**
+ * The deposit half of the সুদমুক্ত সঞ্চয় card: what to send, where, and the
+ * state of the requests already submitted. Sent with every wallet payload so
+ * the app renders the number from the server instead of baking it in.
+ */
+export interface DepositsView {
+  payment: { number: string; numberDisplay: string; waitHours: number; title: string };
+  pending: { count: number; total: number; totalDisplay: string };
+  items: DepositView[];
+}
+
+export async function listDeposits(owner: OwnerId, limit = 20): Promise<DepositsView> {
+  const rows = await Deposit.find({ owner }).sort({ createdAt: -1 }).limit(limit).lean();
+  const pendingRows = rows.filter((r) => r.status === 'pending');
+  const pendingTotal = pendingRows.reduce((sum, r) => sum + (r.amount || 0), 0);
+
+  return {
+    payment: {
+      number: DEPOSIT_PAYMENT.number,
+      numberDisplay: toBn(DEPOSIT_PAYMENT.number),
+      waitHours: DEPOSIT_PAYMENT.waitHours,
+      title: DEPOSIT_PAYMENT.title,
+    },
+    pending: {
+      count: pendingRows.length,
+      total: pendingTotal,
+      totalDisplay: money(pendingTotal).display,
+    },
+    items: rows.map((r) => depositView(r as never)),
+  };
+}
+
 export interface WalletView {
   id: string;
   balance: { raw: number; display: string };
   accountOpened: boolean;
   services: { key: string; label: string; icon: string; enabled: boolean }[];
   benefits: string[];
+  deposits: DepositsView;
 }
 
 export async function getWallet(owner: OwnerId): Promise<WalletView> {
@@ -109,6 +180,7 @@ export async function getWallet(owner: OwnerId): Promise<WalletView> {
       enabled: !!s.enabled,
     })),
     benefits: doc.benefits.map((b) => String(b)),
+    deposits: await listDeposits(owner, 10),
   };
 }
 

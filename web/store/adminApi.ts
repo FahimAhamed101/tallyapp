@@ -3,6 +3,8 @@ import {
   type AdminBusiness,
   type AdminCashboxEntry,
   type AdminCustomer,
+  type AdminDeposit,
+  type AdminDepositsResponse,
   type AdminStockItem,
   type AdminTransaction,
   type AdminUser,
@@ -55,6 +57,13 @@ export interface CashboxListArgs {
 export interface StockListArgs {
   q?: string;
   owner?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface DepositListArgs {
+  q?: string;
+  status?: 'pending' | 'approved' | 'rejected' | '';
   page?: number;
   limit?: number;
 }
@@ -332,6 +341,56 @@ export const adminApi = api.injectEndpoints({
         'Stats',
       ],
     }),
+
+    // ---- deposits (সুদমুক্ত সঞ্চয়) --------------------------------------
+    deposits: build.query<AdminDepositsResponse, DepositListArgs | void>({
+      query: (args) => `/admin/deposits${qs((args || {}) as Record<string, unknown>)}`,
+      providesTags: (result) =>
+        result
+          ? [
+              ...result.items.map((d) => ({ type: 'Deposit' as const, id: d.id })),
+              { type: 'Deposit' as const, id: 'LIST' },
+            ]
+          : [{ type: 'Deposit' as const, id: 'LIST' }],
+    }),
+
+    /**
+     * Approving credits a real balance, so every wallet-shaped view goes stale
+     * with it — the user's own row, the totals on stats, and the queue itself.
+     */
+    reviewDeposit: build.mutation<
+      { ok: boolean; deposit: AdminDeposit; message: string },
+      { id: string; action: 'approve' | 'reject'; note?: string; amount?: number }
+    >({
+      query: ({ id, action, note, amount }) => ({
+        url: `/admin/deposits/${id}`,
+        method: 'POST',
+        body: { action, note, amount },
+      }),
+      invalidatesTags: (_r, _e, { id }) => [
+        { type: 'Deposit', id },
+        { type: 'Deposit', id: 'LIST' },
+        { type: 'User', id: 'LIST' },
+        'Stats',
+      ],
+    }),
+
+    /** Sets a wallet balance outright (or nudges it), for the manual path. */
+    setWalletBalance: build.mutation<
+      { ok: boolean; message: string },
+      { userId: string; balance?: number; delta?: number }
+    >({
+      query: ({ userId, balance, delta }) => ({
+        url: `/admin/wallet/${userId}`,
+        method: 'POST',
+        body: balance !== undefined ? { balance } : { delta },
+      }),
+      invalidatesTags: (_r, _e, { userId }) => [
+        { type: 'User', id: userId },
+        { type: 'User', id: 'LIST' },
+        'Stats',
+      ],
+    }),
   }),
 });
 
@@ -418,4 +477,7 @@ export const {
   useCashboxQuery,
   useUpdateCashboxMutation,
   useDeleteCashboxMutation,
+  useDepositsQuery,
+  useReviewDepositMutation,
+  useSetWalletBalanceMutation,
 } = adminApi;

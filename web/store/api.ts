@@ -177,6 +177,33 @@ export interface EndpointsResponse {
   endpoints: EndpointDef[];
 }
 
+/**
+ * One manual deposit claim (সুদমুক্ত সঞ্চয়), as the panel queue renders it.
+ * `pending` on the list response is the whole backlog, not the current page.
+ */
+export interface AdminDeposit {
+  id: string;
+  amount: number;
+  amountDisplay: string;
+  senderNumber: string;
+  senderNumberDisplay: string;
+  trxId: string;
+  status: 'pending' | 'approved' | 'rejected';
+  statusLabel: string;
+  note: string;
+  createdAt: string;
+  reviewedAt: string | null;
+  reviewedByName: string;
+  userId: string;
+  userName: string;
+  userPhone: string;
+}
+
+export interface AdminDepositsResponse extends Paginated<AdminDeposit> {
+  pending: { count: number; total: number; totalDisplay: string };
+  label: string;
+}
+
 export interface AdminSession {
   id: string;
   name: string;
@@ -200,6 +227,7 @@ export const api = createApi({
     'Customer',
     'Transaction',
     'Cashbox',
+    'Deposit',
     'Endpoint',
   ],
   // The panel is a live admin tool; a short window avoids stale totals without

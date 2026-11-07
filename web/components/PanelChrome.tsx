@@ -8,6 +8,9 @@ import { useAdminLogoutMutation } from '@/store/authApi';
 
 const NAV: { href: string; label: string; icon: string; exact?: boolean }[] = [
   { href: '/admin', label: 'ড্যাশবোর্ড', icon: '▦', exact: true },
+  // Sits second because it is the only queue in the panel that needs an admin
+  // to act: every other screen is read-only history.
+  { href: '/admin/deposits', label: 'ডিপোজিট', icon: '৳' },
   { href: '/admin/users', label: 'ব্যবহারকারী', icon: '☰' },
   { href: '/admin/businesses', label: 'ব্যবসা সমূহ', icon: '⌂' },
   { href: '/admin/customers', label: 'কাস্টমার ও সাপ্লায়ার', icon: '◍' },
