@@ -50,7 +50,10 @@ export const GET = handler(async (req: NextRequest) => {
 
   // Oldest first while working the queue; newest first once you are browsing
   // history, which is what the status filter switches between.
-  const sort = status === 'pending' || !status ? { createdAt: 1 } : { createdAt: -1 };
+  // Annotated because a bare ternary widens 1/-1 to `number`, which Mongoose's
+  // `SortOrder` rejects at build time.
+  const sort: Record<string, 1 | -1> =
+    status === 'pending' || !status ? { createdAt: 1 } : { createdAt: -1 };
 
   const [rows, total, pendingAgg] = await Promise.all([
     Deposit.find(filter)
