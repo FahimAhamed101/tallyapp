@@ -58,11 +58,23 @@ async function patchEntry(req: NextRequest, ctx: Ctx) {
     doc.date = when;
   }
 
-  if (body.photoUrl !== undefined) {
+  // The array wins when it is present: it is the real store, and photoUrl is
+  // only a projection of its first element. Sent alone, photoUrl still works,
+  // which is what keeps a client that predates the gallery from breaking.
+  if (Array.isArray(body.photos)) {
+    const list = body.photos
+      .map((p: unknown) => String(p || '').trim())
+      .filter(Boolean)
+      .slice(0, 8);
+    doc.photos = list;
+    doc.photoUrl = list[0] || '';
+    doc.hasPhoto = !!doc.photoUrl;
+  } else if (body.photoUrl !== undefined) {
     doc.photoUrl = String(body.photoUrl || '').trim();
     // hasPhoto is what the list uses to decide whether to draw a thumbnail at
     // all, so it has to follow the URL rather than drift out of step with it.
     doc.hasPhoto = !!doc.photoUrl;
+    doc.photos = doc.photoUrl ? [doc.photoUrl] : [];
   }
   if (body.photoPublicId !== undefined) {
     doc.photoPublicId = String(body.photoPublicId || '').trim();

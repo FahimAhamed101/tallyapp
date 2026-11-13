@@ -415,9 +415,11 @@ export interface LedgerEntryView {
   dateDisplay: string;
   relative: string;
   hasPhoto: boolean;
-  /** ছবি pill: Cloudinary URL ('' when none). */
+  /** ছবি pill: Cloudinary URL ('' when none). First of [photos]. */
   photoUrl: string;
   photoPublicId: string;
+  /** Every attached photo, oldest first. Empty when none. */
+  photos: string[];
   date: Date;
 }
 
@@ -430,6 +432,7 @@ export function entryView(t: {
   hasPhoto?: boolean;
   photoUrl?: string;
   photoPublicId?: string;
+  photos?: string[];
 }): LedgerEntryView {
   return {
     id: String(t._id),
@@ -444,6 +447,15 @@ export function entryView(t: {
     hasPhoto: !!t.hasPhoto,
     photoUrl: t.photoUrl || '',
     photoPublicId: t.photoPublicId || '',
+    // Rows written before the array existed have only photoUrl, and that one
+    // photo is their whole gallery — without the fallback every old receipt
+    // would report "no photos".
+    photos:
+      t.photos && t.photos.length
+        ? t.photos.filter((p) => !!p)
+        : t.photoUrl
+          ? [t.photoUrl]
+          : [],
     date: t.date,
   };
 }

@@ -27,6 +27,15 @@ const TransactionSchema = new Schema(
     /** Cloudinary asset for the ছবি pill ('' when no photo is attached). */
     photoUrl: { type: String, default: '' },
     photoPublicId: { type: String, default: '' },
+    /**
+     * Every photo attached to this entry, in the order the user added them.
+     *
+     * `photoUrl` above stays the *first* of these, because the list thumbnail
+     * and every older client read that one field. A receipt is often two or
+     * three pages, and a single slot forced the user to choose which page to
+     * keep — so the array is the real store and `photoUrl` is a projection of it.
+     */
+    photos: { type: [String], default: [] },
     date: { type: Date, default: Date.now, index: true },
   },
   { timestamps: true },

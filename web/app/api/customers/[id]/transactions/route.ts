@@ -64,7 +64,18 @@ export const POST = handler(async (req: NextRequest, ctx: Ctx) => {
   const amt = parseAmount(body.amount ?? parsed.data.amount);
   if (!Number.isFinite(amt) || amt <= 0) throw badRequest('সঠিক পরিমাণ দিন');
 
-  const photoUrl = String(parsed.data.photoUrl || '').trim();
+  // A receipt is often two or three pages, so the form can attach several. The
+  // array is the real store; photoUrl stays the first of them because the list
+  // thumbnail and every older client read that single field.
+  const photos: string[] = Array.isArray(body.photos)
+    ? body.photos
+        .map((p: unknown) => String(p || '').trim())
+        .filter(Boolean)
+        .slice(0, 8)
+    : [];
+  const photoUrl = String(parsed.data.photoUrl || '').trim() || photos[0] || '';
+  if (photoUrl && !photos.includes(photoUrl)) photos.unshift(photoUrl);
+
   const created = await Transaction.create({
     owner: user._id,
     business: doc.business,
@@ -75,6 +86,7 @@ export const POST = handler(async (req: NextRequest, ctx: Ctx) => {
     hasPhoto: !!parsed.data.hasPhoto || !!photoUrl,
     photoUrl,
     photoPublicId: String(parsed.data.photoPublicId || '').trim(),
+    photos,
     date: parsed.data.date,
   });
 
